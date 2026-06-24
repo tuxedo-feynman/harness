@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Runtime data (session logs, workspace files)
+data/
+workspace/
+
+# Config with real secrets (copy from config.example.yaml)
+config.yaml
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

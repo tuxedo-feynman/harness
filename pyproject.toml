@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-harness"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+openai_compat = [
+    "openai",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["harness*", "providers*", "tools*", "storage*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests that require a live API or running server (deselect with '-m \"not integration\"')",
+]

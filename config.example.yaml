@@ -1,0 +1,39 @@
+default_session_id: default
+
+# provider options:
+#   type: fake          — no network, pre-programmed responses (for testing)
+#   type: openai_compat — OpenAI wire format; works with llama-server or the real OpenAI API
+provider:
+  type: fake
+
+# For a local llama.cpp model (run: llama-server -m model.gguf --port 8080):
+# provider:
+#   type: openai_compat
+#   base_url: http://localhost:8080/v1
+#   model: local
+
+# For the real OpenAI API:
+# provider:
+#   type: openai_compat
+#   base_url: https://api.openai.com/v1
+#   model: gpt-4o-mini
+
+system_prompt: |
+  You are a local development assistant.
+  Be concise.
+  Use tools only when necessary.
+
+max_tool_rounds: 5
+data_dir: data
+
+tools:
+  echo:
+    enabled: true
+  read_file:
+    enabled: true
+    root: ./workspace
+  write_file:
+    enabled: true
+    root: ./workspace
+  shell:
+    enabled: false
