@@ -5,7 +5,6 @@ from harness.cli import parse_args
 from harness.config import Config, load_config
 from harness.context import ContextBuilder
 from harness.loop import HarnessLoop
-from harness.messages import AssistantTurn
 from harness.sessions import SessionManager
 from providers.fake_provider import FakeProvider
 from storage.jsonl_store import JsonlSessionStore
@@ -15,9 +14,7 @@ from tools.registry import ToolRegistry
 
 def _build_provider(config: Config):
     if config.provider.type == "fake":
-        return FakeProvider([
-            AssistantTurn(content="Hello! How can I help you?", tool_calls=[]),
-        ])
+        return FakeProvider()
     if config.provider.type == "openai_compat":
         from providers.openai_compat_provider import OpenAICompatProvider
         return OpenAICompatProvider(config.provider)
