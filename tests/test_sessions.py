@@ -1,7 +1,5 @@
 from datetime import datetime, timezone
 
-import pytest
-
 from harness.events import SessionEvent
 from harness.messages import AssistantTurn, ToolCall, ToolResult
 from harness.sessions import SessionManager

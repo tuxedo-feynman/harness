@@ -1,8 +1,6 @@
 import warnings
 from datetime import datetime, timezone
 
-import pytest
-
 from harness.events import SessionEvent
 from storage.jsonl_store import JsonlSessionStore
 
@@ -43,13 +41,15 @@ def test_different_sessions_use_different_files(tmp_path):
     store.append_event(_event(session_id="beta"))
     assert len(store.load_events("alpha")) == 1
     assert len(store.load_events("beta")) == 1
-    assert not store.load_events("alpha")[0].session_id == "beta"
+    assert store.load_events("alpha")[0].session_id == "alpha"
+    assert store.load_events("beta")[0].session_id == "beta"
 
 
 def test_corrupt_jsonl_line_is_skipped_with_warning(tmp_path):
     store = JsonlSessionStore(data_dir=tmp_path)
     store.append_event(_event(payload={"content": "before"}))
-    (tmp_path / "test.jsonl").open("a").write("not valid json\n")
+    with (tmp_path / "test.jsonl").open("a") as f:
+        f.write("not valid json\n")
     store.append_event(_event(payload={"content": "after"}))
 
     with warnings.catch_warnings(record=True) as caught:

@@ -1,9 +1,9 @@
-from unittest.mock import MagicMock, patch
 import json
-import pytest
+from unittest.mock import MagicMock, patch
 
 from harness.config import ProviderConfig
 from harness.messages import AssistantTurn, Message, ToolCall, ToolDefinition
+from providers.openai_compat_provider import _to_openai_message, _to_openai_tool
 
 
 def _make_provider():
@@ -26,25 +26,25 @@ def _mock_response(content=None, tool_calls=None):
 # --- message conversion ---
 
 def test_converts_system_message():
-    from providers.openai_compat_provider import _to_openai_message
+
     msg = Message(role="system", content="You are helpful.")
     assert _to_openai_message(msg) == {"role": "system", "content": "You are helpful."}
 
 
 def test_converts_user_message():
-    from providers.openai_compat_provider import _to_openai_message
+
     msg = Message(role="user", content="hello")
     assert _to_openai_message(msg) == {"role": "user", "content": "hello"}
 
 
 def test_converts_assistant_message_no_tool_calls():
-    from providers.openai_compat_provider import _to_openai_message
+
     msg = Message(role="assistant", content="hi there")
     assert _to_openai_message(msg) == {"role": "assistant", "content": "hi there"}
 
 
 def test_converts_assistant_message_with_tool_calls():
-    from providers.openai_compat_provider import _to_openai_message
+
     tc = ToolCall(id="c1", name="echo", arguments={"text": "hi"})
     msg = Message(role="assistant", content=None, tool_calls=[tc])
     result = _to_openai_message(msg)
@@ -57,7 +57,7 @@ def test_converts_assistant_message_with_tool_calls():
 
 
 def test_converts_tool_result_message():
-    from providers.openai_compat_provider import _to_openai_message
+
     msg = Message(role="tool", content="hello", tool_call_id="c1")
     result = _to_openai_message(msg)
     assert result == {"role": "tool", "content": "hello", "tool_call_id": "c1"}
@@ -66,7 +66,7 @@ def test_converts_tool_result_message():
 # --- tool definition conversion ---
 
 def test_converts_tool_definition():
-    from providers.openai_compat_provider import _to_openai_tool
+
     defn = ToolDefinition(
         name="echo",
         description="Echoes text",

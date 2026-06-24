@@ -1,6 +1,4 @@
-import pytest
-
-from harness.messages import AssistantTurn, Message, ToolDefinition
+from harness.messages import AssistantTurn, Message, ToolCall, ToolDefinition
 from providers.fake_provider import FakeProvider
 
 
@@ -21,7 +19,6 @@ def test_greeting_on_first_call_when_no_tools():
 
 
 def test_calls_echo_tool_on_first_call_when_echo_available():
-    from harness.messages import ToolDefinition
     provider = FakeProvider()
     echo_def = ToolDefinition(name="echo", description="Echoes text", parameters={})
     turn = provider.complete([Message(role="user", content="hello")], [echo_def])
@@ -32,7 +29,6 @@ def test_calls_echo_tool_on_first_call_when_echo_available():
 
 
 def test_greeting_returned_after_tool_result():
-    from harness.messages import ToolDefinition
     provider = FakeProvider()
     echo_def = ToolDefinition(name="echo", description="Echoes text", parameters={})
     provider.complete([Message(role="user", content="hi")], [echo_def])

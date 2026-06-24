@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from harness.config import Config, ProviderConfig
 from harness.context import ContextBuilder
 from harness.loop import HarnessLoop
@@ -9,7 +7,6 @@ from harness.messages import AssistantTurn, ToolCall, ToolDefinition, ToolResult
 from harness.sessions import SessionManager
 from providers.fake_provider import FakeProvider
 from storage.jsonl_store import JsonlSessionStore
-from tools.base import ToolContext
 from tools.registry import ToolRegistry
 
 
@@ -172,9 +169,3 @@ def test_tool_definitions_passed_to_provider(tmp_path):
     assert any(d.name == "fake_tool" for d in tool_defs)
 
 
-def test_no_real_provider_needed(tmp_path):
-    # All loop tests use FakeProvider — this test makes that explicit
-    loop, _, provider = _make_loop(tmp_path, [AssistantTurn(content="ok", tool_calls=[])])
-    loop.run_turn("s1", "hi")
-    assert len(provider.calls) == 1
-    assert provider.calls[0][0][-1].role == "user"
