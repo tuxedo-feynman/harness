@@ -13,10 +13,43 @@ def test_returns_programmed_responses_in_order():
     assert provider.complete([], []).content == "second"
 
 
-def test_raises_when_no_responses_remain():
-    provider = FakeProvider([])
-    with pytest.raises(RuntimeError, match="no more"):
-        provider.complete([], [])
+def test_greeting_on_first_call_when_no_tools():
+    provider = FakeProvider()
+    turn = provider.complete([Message(role="user", content="hi")], [])
+    assert turn.content == "Hello! How can I help you?"
+    assert turn.tool_calls == []
+
+
+def test_calls_echo_tool_on_first_call_when_echo_available():
+    from harness.messages import ToolDefinition
+    provider = FakeProvider()
+    echo_def = ToolDefinition(name="echo", description="Echoes text", parameters={})
+    turn = provider.complete([Message(role="user", content="hello")], [echo_def])
+    assert turn.content is None
+    assert len(turn.tool_calls) == 1
+    assert turn.tool_calls[0].name == "echo"
+    assert turn.tool_calls[0].arguments == {"text": "hello"}
+
+
+def test_greeting_returned_after_tool_result():
+    from harness.messages import ToolDefinition
+    provider = FakeProvider()
+    echo_def = ToolDefinition(name="echo", description="Echoes text", parameters={})
+    provider.complete([Message(role="user", content="hi")], [echo_def])
+    msgs = [
+        Message(role="user", content="hi"),
+        Message(role="tool", content="hi", tool_call_id="fake-1"),
+    ]
+    turn = provider.complete(msgs, [echo_def])
+    assert turn.content == "Hello! How can I help you?"
+    assert turn.tool_calls == []
+
+
+def test_echoes_user_message_on_subsequent_calls():
+    provider = FakeProvider()
+    provider.complete([Message(role="user", content="first")], [])
+    turn = provider.complete([Message(role="user", content="second")], [])
+    assert turn.content == "[fake] second"
 
 
 def test_records_messages_passed_to_it():
