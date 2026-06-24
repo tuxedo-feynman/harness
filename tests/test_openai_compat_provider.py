@@ -2,7 +2,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from harness.config import ProviderConfig
-from harness.messages import AssistantTurn, Message, ToolCall, ToolDefinition
+from harness.messages import Message, ToolCall, ToolDefinition
 from providers.openai_compat_provider import _to_openai_message, _to_openai_tool
 
 
@@ -109,5 +109,5 @@ def test_does_not_make_real_http_calls():
     provider = _make_provider()
     # _client is a MagicMock — real HTTP would raise, mock won't
     provider._client.chat.completions.create.return_value = _mock_response(content="ok")
-    turn = provider.complete([], [])
+    provider.complete([], [])
     assert provider._client.chat.completions.create.called

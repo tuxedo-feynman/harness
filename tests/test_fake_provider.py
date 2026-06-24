@@ -1,4 +1,4 @@
-from harness.messages import AssistantTurn, Message, ToolCall, ToolDefinition
+from harness.messages import AssistantTurn, Message, ToolDefinition
 from providers.fake_provider import FakeProvider
 
 

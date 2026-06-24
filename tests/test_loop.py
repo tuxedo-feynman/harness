@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from harness.config import Config, ProviderConfig
 from harness.context import ContextBuilder
 from harness.loop import HarnessLoop
