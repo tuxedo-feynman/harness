@@ -18,6 +18,12 @@ class ProviderConfig:
 
 
 @dataclass
+class LoggingConfig:
+    env: str = "dev"
+    log_file: str | None = None
+
+
+@dataclass
 class Config:
     default_session_id: str = "default"
     provider: ProviderConfig = field(default_factory=lambda: ProviderConfig(type="fake"))
@@ -25,6 +31,7 @@ class Config:
     tools: dict = field(default_factory=dict)
     max_tool_rounds: int = 5
     data_dir: str = "data"
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
 def load_config(path: str = "config.yaml") -> Config:
@@ -42,6 +49,12 @@ def load_config(path: str = "config.yaml") -> Config:
         base_url=provider_raw.get("base_url", "http://localhost:8080/v1"),
     )
 
+    logging_raw = raw.get("logging", {})
+    logging_config = LoggingConfig(
+        env=logging_raw.get("env", "dev"),
+        log_file=logging_raw.get("log_file"),
+    )
+
     return Config(
         default_session_id=raw.get("default_session_id", "default"),
         provider=provider,
@@ -49,4 +62,5 @@ def load_config(path: str = "config.yaml") -> Config:
         tools=raw.get("tools", {}),
         max_tool_rounds=raw.get("max_tool_rounds", 5),
         data_dir=raw.get("data_dir", "data"),
+        logging=logging_config,
     )

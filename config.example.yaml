@@ -26,6 +26,10 @@ system_prompt: |
 max_tool_rounds: 5
 data_dir: data
 
+# logging:
+#   env: dev         # dev (default) or production
+#   log_file: /tmp/harness.log   # optional in dev; required when env=production
+
 tools:
   echo:
     enabled: true

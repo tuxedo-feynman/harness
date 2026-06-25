@@ -9,33 +9,40 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _events_to_messages(events: list[SessionEvent]) -> list[Message]:
+    messages: list[Message] = []
+    for event in events:
+        if event.event_type == "user_message":
+            messages.append(Message(role="user", content=event.payload["content"]))
+        elif event.event_type == "assistant_turn":
+            tool_calls_raw = event.payload.get("tool_calls", [])
+            tool_calls = [ToolCall(**tc) for tc in tool_calls_raw]
+            messages.append(Message(
+                role="assistant",
+                content=event.payload.get("content"),
+                tool_calls=tool_calls if tool_calls else None,
+            ))
+        elif event.event_type == "tool_result":
+            messages.append(Message(
+                role="tool",
+                content=event.payload["content"],
+                tool_call_id=event.payload["tool_call_id"],
+                name=event.payload.get("name"),
+            ))
+        # unknown event types are silently skipped
+    return messages
+
+
 class SessionManager:
     def __init__(self, store: JsonlSessionStore):
         self.store = store
 
     def get_messages(self, session_id: str) -> list[Message]:
+        return _events_to_messages(self.store.load_events(session_id))
+
+    def get_context_snapshot(self, session_id: str) -> tuple[list[Message], int]:
         events = self.store.load_events(session_id)
-        messages: list[Message] = []
-        for event in events:
-            if event.event_type == "user_message":
-                messages.append(Message(role="user", content=event.payload["content"]))
-            elif event.event_type == "assistant_turn":
-                tool_calls_raw = event.payload.get("tool_calls", [])
-                tool_calls = [ToolCall(**tc) for tc in tool_calls_raw]
-                messages.append(Message(
-                    role="assistant",
-                    content=event.payload.get("content"),
-                    tool_calls=tool_calls if tool_calls else None,
-                ))
-            elif event.event_type == "tool_result":
-                messages.append(Message(
-                    role="tool",
-                    content=event.payload["content"],
-                    tool_call_id=event.payload["tool_call_id"],
-                    name=event.payload.get("name"),
-                ))
-            # unknown event types are silently skipped
-        return messages
+        return _events_to_messages(events), len(events)
 
     def record_user_message(self, session_id: str, content: str) -> None:
         self.store.append_event(SessionEvent(

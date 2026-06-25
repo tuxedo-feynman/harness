@@ -4,6 +4,7 @@ from pathlib import Path
 from harness.cli import parse_args
 from harness.config import Config, load_config
 from harness.context import ContextBuilder
+from harness.logger import setup_logging
 from harness.loop import HarnessLoop
 from harness.sessions import SessionManager
 from providers.fake_provider import FakeProvider
@@ -37,6 +38,8 @@ def main(argv=None) -> None:
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    setup_logging(config.logging)
 
     session_id = args.session or config.default_session_id
     workspace_root = Path("workspace")
