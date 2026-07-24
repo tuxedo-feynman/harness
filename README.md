@@ -1,6 +1,18 @@
 # harness
 
-A bare-bones local LLM harness. CLI-driven agent loop with session persistence, a tool registry, and swappable model providers.
+A bare-bones local LLM harness built around a single abstraction: the **Action**.
+
+User input, LLM calls, tool execution, and printing a response are all Actions.
+The **Operator** (execution loop + policy controller) receives Action results,
+builds context, and decides what runs next — the harness, not the model, is in
+control. See `docs/architecture.txt` for the design.
+
+- **Thinking Actions** — AI APIs that make decisions given context (OpenAI, llama-server, a fake for tests)
+- **Effect Actions** — anything that touches the outside world (terminal today; telegram, calendar, timers later)
+- **Null Action** — terminates the execution loop
+
+Each turn is recorded as a chain of **Operands**: one per policy cycle, each
+holding a batch of action requests and their paired results.
 
 ## Setup
 
@@ -16,7 +28,7 @@ pip install -e ".[dev]"
 cp config.example.yaml config.yaml
 ```
 
-The default config uses a fake provider so you can run the harness without any model server.
+The default config uses the fake thinking action, so the harness runs without any model server.
 
 ## Usage
 
@@ -26,16 +38,10 @@ Single-shot:
 python -m harness.main "Say hello"
 ```
 
-Interactive chat:
+Interactive chat (history carries across turns for the life of the process — nothing is persisted):
 
 ```bash
 python -m harness.main --chat
-```
-
-Named session:
-
-```bash
-python -m harness.main --session my-session "What did we talk about?"
 ```
 
 Custom config path:
@@ -44,20 +50,20 @@ Custom config path:
 python -m harness.main --config path/to/config.yaml "Hello"
 ```
 
-## Providers
+## Thinking actions
 
-Set `provider.type` in `config.yaml`:
+Set `thinking_action.type` in `config.yaml`:
 
 | Type | Description |
 |------|-------------|
-| `fake` | Pre-programmed responses, no network (default) |
-| `openai_compat` | OpenAI wire format — works with llama-server or the real OpenAI API |
+| `fake` | Canned responses, no network (default) |
+| `openai` | OpenAI wire format — works with llama-server or the real OpenAI API |
 
 For a local [llama.cpp](https://github.com/ggerganov/llama.cpp) model:
 
 ```yaml
-provider:
-  type: openai_compat
+thinking_action:
+  type: openai
   base_url: http://localhost:8080/v1
   model: local
 ```
@@ -68,9 +74,18 @@ Start the server with:
 llama-server -m path/to/model.gguf --port 8080
 ```
 
-## Session data
+Requires the optional dependency: `pip install -e ".[openai]"`.
 
-Turns are persisted as JSONL under `data/sessions/<session-id>.jsonl`. The `data/` directory is gitignored.
+## Logging
+
+Structured logfmt lines (`key=value`) via Python logging. In dev, logs go to
+`/tmp/harness.log`:
+
+```bash
+tail -f /tmp/harness.log
+```
+
+Policy decisions, action executions, and operand creation are all logged.
 
 ## Tests
 
@@ -78,10 +93,10 @@ Turns are persisted as JSONL under `data/sessions/<session-id>.jsonl`. The `data
 pytest
 ```
 
-No network or API key required — the test suite uses a fake provider throughout.
+No network or API key required — the suite uses the fake thinking action throughout.
 
 Optional coverage report:
 
 ```bash
-pytest --cov=harness --cov=providers --cov=tools --cov=storage
+pytest --cov=harness --cov=actions
 ```

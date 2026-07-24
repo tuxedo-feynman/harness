@@ -1,33 +1,38 @@
 import sys
-from pathlib import Path
 
+from actions.fake_thinking_action import FakeThinkingAction
+from actions.null_action import NullAction
+from actions.terminal_action import TerminalAction
+from harness.action import Action
+from harness.action_directory import ActionDirectory
 from harness.cli import parse_args
 from harness.config import Config, load_config
 from harness.context import ContextBuilder
-from harness.logger import setup_logging
-from harness.loop import HarnessLoop
-from harness.sessions import SessionManager
-from providers.fake_provider import FakeProvider
-from storage.jsonl_store import JsonlSessionStore
-from tools.echo_tool import EchoTool
-from tools.registry import ToolRegistry
+from harness.logger import new_id, setup_logging
+from harness.loop import ExecutionLoop
+from harness.models import ActionDescription, ActionResult
+from harness.policy import PolicyController
 
 
-def _build_provider(config: Config):
-    if config.provider.type == "fake":
-        return FakeProvider()
-    if config.provider.type == "openai_compat":
-        from providers.openai_compat_provider import OpenAICompatProvider
-        return OpenAICompatProvider(config.provider)
-    raise ValueError(f"Unknown provider type: {config.provider.type!r}")
+def _build_thinking_action(config: Config) -> Action:
+    if config.thinking_action.type == "fake":
+        return FakeThinkingAction()
+    if config.thinking_action.type == "openai":
+        from actions.openai_thinking_action import OpenAIThinkingAction
+
+        return OpenAIThinkingAction(config.thinking_action)
+    raise ValueError(f"Unknown thinking action type: {config.thinking_action.type!r}")
 
 
-def _build_registry(config: Config) -> ToolRegistry:
-    registry = ToolRegistry()
-    tools_cfg = config.tools or {}
-    if tools_cfg.get("echo", {}).get("enabled", True):
-        registry.register(EchoTool())
-    return registry
+def _seed_user_input(context_builder: ContextBuilder, text: str) -> None:
+    """Record user input as the result of a terminal.read action — input is
+    just another Action's result, same shape as everything else."""
+    context_builder.add_operand(
+        action_requests=[
+            ActionDescription(id=new_id(), action_name="terminal", method_name="read")
+        ],
+        action_results=[ActionResult(contents=text)],
+    )
 
 
 def main(argv=None) -> None:
@@ -41,24 +46,11 @@ def main(argv=None) -> None:
 
     setup_logging(config.logging)
 
-    session_id = args.session or config.default_session_id
-    workspace_root = Path("workspace")
-    workspace_root.mkdir(exist_ok=True)
-
-    store = JsonlSessionStore(data_dir=Path(config.data_dir) / "sessions")
-    session = SessionManager(store)
-    context_builder = ContextBuilder()
-    provider = _build_provider(config)
-    registry = _build_registry(config)
-
-    loop = HarnessLoop(
-        config=config,
-        session=session,
-        context_builder=context_builder,
-        provider=provider,
-        tool_registry=registry,
-        workspace_root=workspace_root,
-    )
+    thinking = _build_thinking_action(config)
+    directory = ActionDirectory([NullAction(), TerminalAction(), thinking])
+    context_builder = ContextBuilder(config.system_prompt, directory)
+    policy = PolicyController(directory, thinking_action_name=thinking.name)
+    loop = ExecutionLoop(directory, policy, context_builder)
 
     if args.chat:
         print("Chat mode (type 'quit' to exit)")
@@ -71,11 +63,11 @@ def main(argv=None) -> None:
                 break
             if not user_input:
                 continue
-            response = loop.run_turn(session_id, user_input)
-            print(response)
+            _seed_user_input(context_builder, user_input)
+            loop.run()
     elif args.prompt:
-        response = loop.run_turn(session_id, args.prompt)
-        print(response)
+        _seed_user_input(context_builder, args.prompt)
+        loop.run()
     else:
         print('Usage: python -m harness.main "Your message"', file=sys.stderr)
         sys.exit(1)

@@ -1,43 +1,15 @@
-default_session_id: default
+# Copy to config.yaml to get started. config.yaml is gitignored.
 
-# provider options:
-#   type: fake          — no network, pre-programmed responses (for testing)
-#   type: openai_compat — OpenAI wire format; works with llama-server or the real OpenAI API
-provider:
-  type: fake
-
-# For a local llama.cpp model (run: llama-server -m model.gguf --port 8080):
-# provider:
-#   type: openai_compat
-#   base_url: http://localhost:8080/v1
-#   model: local
-
-# For the real OpenAI API:
-# provider:
-#   type: openai_compat
-#   base_url: https://api.openai.com/v1
-#   model: gpt-4o-mini
+thinking_action:
+  type: fake            # "fake" (no network) or "openai" (OpenAI-compatible API)
+  # model: local
+  # base_url: http://localhost:8080/v1   # llama-server, or https://api.openai.com/v1
 
 system_prompt: |
   You are a local development assistant.
   Be concise.
-  Use tools only when necessary.
+  Use actions only when necessary.
 
-max_tool_rounds: 5
-data_dir: data
-
-# logging:
-#   env: dev         # dev (default) or production
-#   log_file: /tmp/harness.log   # optional in dev; required when env=production
-
-tools:
-  echo:
-    enabled: true
-  read_file:
-    enabled: true
-    root: ./workspace
-  write_file:
-    enabled: true
-    root: ./workspace
-  shell:
-    enabled: false
+logging:
+  env: dev              # dev logs to /tmp/harness.log unless log_file is set
+  # log_file: /path/to/harness.log      # required when env: production

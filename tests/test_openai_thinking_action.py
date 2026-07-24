@@ -1,28 +1,27 @@
 from actions.fake_thinking_action import FakeThinkingAction
 from actions.null_action import NullAction
+from actions.openai_thinking_action import OpenAIThinkingAction
 from actions.terminal_action import TerminalAction
 from harness.action_directory import ActionDirectory
+from harness.config import ThinkingActionConfig
 from harness.context import ContextBuilder
-from harness.loop import ExecutionLoop
 from harness.models import ActionDescription, ActionResult
-from harness.policy import PolicyController
 
 
-def test_full_turn_delivers_response_and_terminates_with_null(capsys):
+def test_converts_user_input_history_to_openai_messages():
     directory = ActionDirectory([NullAction(), TerminalAction(), FakeThinkingAction()])
     builder = ContextBuilder(system_prompt="sys", action_directory=directory)
-    policy = PolicyController(directory, thinking_action_name="fake")
-    loop = ExecutionLoop(directory, policy, builder)
-
     builder.add_operand(
         action_requests=[
             ActionDescription(id="ad-1", action_name="terminal", method_name="read")
         ],
-        action_results=[ActionResult(contents="hi")],
+        action_results=[ActionResult(contents="hello")],
     )
-    loop.run()
 
-    assert "Hello! How can I help you?" in capsys.readouterr().out
-    final = builder.leaf()
-    assert final.action_requests[-1].action_name == "null"
-    assert final.resolved
+    action = OpenAIThinkingAction(ThinkingActionConfig(type="openai"))
+    messages = action._to_openai_messages(builder.build())
+
+    assert messages == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]

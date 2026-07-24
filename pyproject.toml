@@ -15,13 +15,13 @@ dev = [
     "pytest",
     "pytest-cov",
 ]
-openai_compat = [
+openai = [
     "openai",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["harness*", "providers*", "tools*", "storage*"]
+include = ["harness*", "actions*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

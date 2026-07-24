@@ -1,0 +1,97 @@
+Effect Actions: 
+- tool plugins that effect the outside world, text messages, calendars, timers, chats, home automation, etc... 
+
+Thinking Actions:
+- AI API's that can make decisions given context, request, and an ActionDirectory on what to do context
+
+Null Action:
+- Terminating Action: ends the current execution loop. Policy Controller requests it when there is nothing left to do (e.g. after the response has been delivered back to the user).
+
+
+Execution Loop:
+- Creates a new operand for each new iteration of execution loop, calls context builder, and passes off to policy engine.
+- Single-threaded: executes every ActionDescription in the operand's action_requests sequentially, appending each ActionResult to action_results. action_results[i] is the result of action_requests[i] -- index pairing is the provenance record.
+- Holds the logic for the execution loop: Build Context --> Evaluate Policy Controls --> Execute Actions --> [[REPEAT until policy requests the Null Action]]
+
+
+Operand:
+- Primary internal data model
+{
+    id: uuid
+    created_at: datetime
+    parent: uuid | None
+    action_requests: [ActionDescription]
+    action_results: [ActionResult]
+}
+
+Context:
+- Internal representation handed to Policy Controller and Thinking Actions
+{
+    system_prompt: str
+    history: [Operand]
+    available_actions: dict[str, {kind, methods: dict[str, MethodDescription]}]  // action_name -> kind + method_name -> MethodDescription. kind is included so Thinking Actions can filter what they advertise as callable (e.g. effect-only), while still allowing policy-sanctioned thinking-calls-thinking setups.
+}
+
+Context Builder:
+- Owns the flat, ever-growing list of every resolved Operand for the life of the process.
+- First Operand ever added has no parent -- this is the root of the conversation.
+- Every subsequent Operand defaults to attaching as a child of the current leaf (the most recently added Operand), so a chat driver just keeps appending new turns with no parent-tracking of its own.
+- MVP history is therefore a chain: one operand per policy cycle, each holding its full batch of requests and results. The parent field permits branching later but nothing branches yet.
+- build() renders the current system prompt, full operand history, and the Action Directory's method index into a Context. This is a read-only projection of Action.methods per registered Action -- never the ActionDirectory itself, so Actions can't call other Actions directly and bypass Policy Controller.
+
+
+Harness Execution Unit: // NOT NEEDED FOR MVP
+- internal data model for each execution loop
+  {
+      id: uuid
+      loop_iteration:
+      operand_tree: Operand
+  }
+
+  Policy Controller:
+  - A bunch of conditional logic, inspects the Operand and decides whether to short-circuit a thinking action and go directly to null or effect action.
+  - Primary path will be that action_requests of the operand is empty, and policy controller will update the operand with an ActionDescription.
+  - Logs every decision it makes: requests attached, requests vetoed or modified, short-circuits taken.
+  - Only the leaf operand is mutable. Operands whose results are resolved are historical record and are never modified.
+
+
+  Action Directory:
+  - a map of name --> Action
+  - method_index() returns a map of action_name --> method_name --> MethodDescription, used by Context Builder to populate Context.available_actions
+  - descriptions() returns a string of the descriptions of all Actions and their functionality, as well as how to call them -- for logging/debugging, not used to populate Context
+
+Action:
+- Base class for tools and API's to implement, think telegram, ChatGPT, terminal, etc...
+  (
+      name: str
+      kind: ['thinking, effect', 'null']
+      description: str
+      methods: dict[str, MethodDescription]
+
+      def run(method_name: str, arguments: dict[str, any], context: Context) -> ActionResult
+
+  MethodDescription(
+    name: str
+    description: str
+    parameters_schema: dict[str, Any]
+  )
+)
+
+
+
+ActionDescription:
+- Data model created so that an Action can be called
+{
+  id: uuid
+  action_name: str
+  method_name: str
+  method_parameters: dict[str, Any]
+}
+
+ActionResult:
+- The result of an Action
+{
+    contents: str
+    action_description_requests: [ActionDescription]
+    error: str | None
+  }

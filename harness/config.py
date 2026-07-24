@@ -6,13 +6,13 @@ import yaml
 DEFAULT_SYSTEM_PROMPT = (
     "You are a local development assistant.\n"
     "Be concise.\n"
-    "Use tools only when necessary."
+    "Use actions only when necessary."
 )
 
 
 @dataclass
-class ProviderConfig:
-    type: str
+class ThinkingActionConfig:
+    type: str  # "fake" | "openai"
     model: str = "local"
     base_url: str = "http://localhost:8080/v1"
 
@@ -25,12 +25,10 @@ class LoggingConfig:
 
 @dataclass
 class Config:
-    default_session_id: str = "default"
-    provider: ProviderConfig = field(default_factory=lambda: ProviderConfig(type="fake"))
+    thinking_action: ThinkingActionConfig = field(
+        default_factory=lambda: ThinkingActionConfig(type="fake")
+    )
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
-    tools: dict = field(default_factory=dict)
-    max_tool_rounds: int = 5
-    data_dir: str = "data"
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
@@ -42,11 +40,11 @@ def load_config(path: str = "config.yaml") -> Config:
     with open(p) as f:
         raw = yaml.safe_load(f) or {}
 
-    provider_raw = raw.get("provider", {})
-    provider = ProviderConfig(
-        type=provider_raw.get("type", "fake"),
-        model=provider_raw.get("model", "local"),
-        base_url=provider_raw.get("base_url", "http://localhost:8080/v1"),
+    thinking_raw = raw.get("thinking_action", {})
+    thinking = ThinkingActionConfig(
+        type=thinking_raw.get("type", "fake"),
+        model=thinking_raw.get("model", "local"),
+        base_url=thinking_raw.get("base_url", "http://localhost:8080/v1"),
     )
 
     logging_raw = raw.get("logging", {})
@@ -56,11 +54,7 @@ def load_config(path: str = "config.yaml") -> Config:
     )
 
     return Config(
-        default_session_id=raw.get("default_session_id", "default"),
-        provider=provider,
+        thinking_action=thinking,
         system_prompt=raw.get("system_prompt", DEFAULT_SYSTEM_PROMPT),
-        tools=raw.get("tools", {}),
-        max_tool_rounds=raw.get("max_tool_rounds", 5),
-        data_dir=raw.get("data_dir", "data"),
         logging=logging_config,
     )
