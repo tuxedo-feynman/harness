@@ -5,13 +5,22 @@ Thinking Actions:
 - AI API's that can make decisions given context, request, and an ActionDirectory on what to do context
 
 Null Action:
-- Terminating Action: ends the current execution loop. Policy Controller requests it when there is nothing left to do (e.g. after the response has been delivered back to the user).
+- Terminating Action: ends the current branch. Policy Controller requests it when a branch is genuinely over (e.g. a channel quit). Turns normally end by returning to listening, not by Null.
+
+Listeners:
+- Every listening channel (terminal, telegram, ...) holds exactly one live pending Operand: an unresolved listen request. It resolves with an ActionResult when a message arrives.
+- When a turn completes, the other channels' pending listeners are MOVED (reparented, same operand -- it is the same subscription) to the new tip as siblings of the fresh listener, so any channel's next message continues from the full conversation. One shared history across all channels.
 
 
 Execution Loop:
-- Creates a new operand for each new iteration of execution loop, calls context builder, and passes off to policy engine.
+- Anchored on a resolved stimulus operand. Creates a new working operand for each cycle, calls context builder, and passes off to policy engine.
 - Single-threaded: executes every ActionDescription in the operand's action_requests sequentially, appending each ActionResult to action_results. action_results[i] is the result of action_requests[i] -- index pairing is the provenance record.
-- Holds the logic for the execution loop: Build Context --> Evaluate Policy Controls --> Execute Actions --> [[REPEAT until policy requests the Null Action]]
+- Requests whose method is marked listen are PARKED (left unresolved, registered as that channel's pending listener) instead of executed.
+- Holds the logic for the execution loop: Build Context --> Evaluate Policy Controls --> Execute Actions --> [[REPEAT until a listen request parks or a Null Action executes]]
+
+Dispatcher:
+- The stimulus boundary. One thread per listening channel blocks on the channel and pushes results onto a queue; threads know nothing about operands.
+- The single-threaded dispatch loop resolves each stimulus against that channel's pending listener operand (attribution at dequeue time), then runs the execution loop from it. All operand mutation happens on this thread.
 
 
 Operand:
@@ -28,16 +37,17 @@ Context:
 - Internal representation handed to Policy Controller and Thinking Actions
 {
     system_prompt: str
-    history: [Operand]
+    history: [Operand]  // the ancestor path from root to the anchor operand, in order
     available_actions: dict[str, {kind, methods: dict[str, MethodDescription]}]  // action_name -> kind + method_name -> MethodDescription. kind is included so Thinking Actions can filter what they advertise as callable (e.g. effect-only), while still allowing policy-sanctioned thinking-calls-thinking setups.
+    listeners: [Operand]  // live pending listener operands -- off the ancestor path, so only visible here
 }
 
 Context Builder:
-- Owns the flat, ever-growing list of every resolved Operand for the life of the process.
-- First Operand ever added has no parent -- this is the root of the conversation.
-- Every subsequent Operand defaults to attaching as a child of the current leaf (the most recently added Operand), so a chat driver just keeps appending new turns with no parent-tracking of its own.
-- MVP history is therefore a chain: one operand per policy cycle, each holding its full batch of requests and results. The parent field permits branching later but nothing branches yet.
-- build() renders the current system prompt, full operand history, and the Action Directory's method index into a Context. This is a read-only projection of Action.methods per registered Action -- never the ActionDirectory itself, so Actions can't call other Actions directly and bypass Policy Controller.
+- Owns the operand tree for the life of the process. The tree (parent pointers) is the sole source of truth; the flat storage list is an implementation detail.
+- An explicit synthetic root operand starts the tree; the initial listeners attach as its children.
+- Invariants: children only attach beneath resolved operands, so unresolved operands are always leaves. Resolved operands are immutable history; unresolved operands are live state -- filled by Policy Controller, moved by Context Builder.
+- move() reparents a pending operand (the prune-and-move of uncle listeners). Only unresolved operands may move.
+- build(anchor) renders the context as seen from an operand: history is the ancestor path root->anchor, so pending listeners and dead branches are excluded automatically. available_actions is a read-only projection of Action.methods per registered Action -- never the ActionDirectory itself, so Actions can't call other Actions directly and bypass Policy Controller.
 
 
 Harness Execution Unit: // NOT NEEDED FOR MVP
@@ -51,8 +61,8 @@ Harness Execution Unit: // NOT NEEDED FOR MVP
   Policy Controller:
   - A bunch of conditional logic, inspects the Operand and decides whether to short-circuit a thinking action and go directly to null or effect action.
   - Primary path will be that action_requests of the operand is empty, and policy controller will update the operand with an ActionDescription.
+  - Owns the end-of-turn listening decision: which channels keep a pending listener (quit = omit that channel's listen request), where responses are delivered (the origin channel of the current branch), and when the uncle listeners move to the tip (mechanics executed by Context Builder).
   - Logs every decision it makes: requests attached, requests vetoed or modified, short-circuits taken.
-  - Only the leaf operand is mutable. Operands whose results are resolved are historical record and are never modified.
 
 
   Action Directory:
@@ -74,6 +84,7 @@ Action:
     name: str
     description: str
     parameters_schema: dict[str, Any]
+    listen: bool  // listen methods park as pending listener operands instead of executing (terminal.read, telegram.receive)
   )
 )
 
@@ -92,6 +103,7 @@ ActionResult:
 - The result of an Action
 {
     contents: str
+    metadata: dict[str, Any]  // structured event data from the world (e.g. the telegram chat_id a message came from). Requests record intent; results record events. Policy draws delivery addressing from the origin stimulus's metadata.
     action_description_requests: [ActionDescription]
     error: str | None
   }

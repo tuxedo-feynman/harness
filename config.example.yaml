@@ -1,9 +1,21 @@
 # Copy to config.yaml to get started. config.yaml is gitignored.
 
-thinking_action:
-  type: fake            # "fake" (no network) or "openai" (OpenAI-compatible API)
-  # model: local
-  # base_url: http://localhost:8080/v1   # llama-server, or https://api.openai.com/v1
+# Actions to register at startup. Each entry gets its own config block.
+# The null action is always present and needs no entry.
+actions:
+  terminal:
+  fake:                 # canned thinking action, no network
+  # openai:             # OpenAI-compatible API (llama-server or the real thing)
+  #   model: local
+  #   base_url: http://localhost:8080/v1
+  # telegram:           # Telegram bot channel (listens alongside terminal in --chat)
+  #   token: "123456:your-bot-token"
+  #   chat_ids:            # allow-list: numeric chat ids or "@username" entries.
+  #     - "@your-username" #   usernames match incoming messages; only numeric ids
+  #     - 123456789        #   can be send targets. Empty/omitted = accept all.
+
+# Which thinking action the policy controller routes to.
+default_thinking_action: fake
 
 system_prompt: |
   You are a local development assistant.

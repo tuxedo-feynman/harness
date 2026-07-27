@@ -26,6 +26,9 @@ class ActionDescription:
 @dataclass
 class ActionResult:
     contents: str
+    # Structured event data from the world (e.g. the telegram chat_id/username
+    # a message came from). Requests record intent; results record events.
+    metadata: dict[str, Any] = field(default_factory=dict)
     action_description_requests: list[ActionDescription] = field(default_factory=list)
     error: str | None = None
 
@@ -60,3 +63,6 @@ class Context:
     system_prompt: str
     history: list[Operand]
     available_actions: dict[str, AvailableAction]
+    # Live pending listener operands. They are off the ancestor path, so
+    # Policy can only see them here.
+    listeners: list[Operand] = field(default_factory=list)

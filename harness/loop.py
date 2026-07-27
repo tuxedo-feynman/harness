@@ -3,17 +3,18 @@ import time
 
 from harness.action_directory import ActionDirectory
 from harness.context import ContextBuilder
-from harness.models import ActionResult
+from harness.models import Operand
 from harness.policy import PolicyController
 
 log = logging.getLogger(__name__)
 
 
 class ExecutionLoop:
-    """Single-threaded execution cycle:
-    Build Context --> Evaluate Policy --> Execute Actions --> repeat,
-    until a Null Action is executed. All requests in an operand's batch are
-    executed sequentially; action_results[i] is the result of action_requests[i].
+    """Single-threaded execution cycle, anchored on a resolved stimulus:
+    Build Context --> Evaluate Policy --> Execute Actions --> repeat.
+    A turn ends when a listen request parks (returned to listening) or a
+    Null Action executes (branch terminated). All requests in a batch run
+    sequentially; action_results[i] is the result of action_requests[i].
     """
 
     def __init__(
@@ -26,40 +27,46 @@ class ExecutionLoop:
         self.policy = policy
         self.context_builder = context_builder
 
-    def run(self) -> None:
-        leaf = self.context_builder.leaf()
-        if leaf is None:
-            raise RuntimeError("Seed an operand via ContextBuilder before run()")
-
+    def run(self, anchor: Operand) -> None:
+        current = anchor
         while True:
-            if leaf.resolved:
-                leaf = self.context_builder.add_operand()
-            context = self.context_builder.build()
-            leaf = self.policy.evaluate(leaf, context)
+            working = self.context_builder.add_operand(parent=current)
+            context = self.context_builder.build(working)
+            working = self.policy.evaluate(working, context)
 
-            executed_null = False
-            for request in leaf.action_requests[len(leaf.action_results):]:
+            i = len(working.action_results)
+            while i < len(working.action_requests):
+                request = working.action_requests[i]
+                action = self.action_directory.get(request.action_name)
+                method = action.methods.get(request.method_name)
+
+                if method is not None and method.listen:
+                    dropped = len(working.action_requests) - (i + 1)
+                    if dropped:
+                        log.warning(
+                            f"requests_dropped operand={working.id} count={dropped}"
+                            f" reason=after_listen_request"
+                        )
+                        del working.action_requests[i + 1:]
+                    self.context_builder.park_listener(request.action_name, working)
+                    log.info(
+                        f"listener_parked operand={working.id} channel={request.action_name}"
+                    )
+                    return
+
                 start = time.monotonic()
-                try:
-                    action = self.action_directory.get(request.action_name)
-                    result = action.run(request.method_name, request.method_parameters, context)
-                    kind = action.kind
-                except Exception as e:
-                    result = ActionResult(contents="", error=str(e))
-                    kind = None
-                leaf.action_results.append(result)
+                result = action.run(request.method_name, request.method_parameters, context)
+                working.action_results.append(result)
 
                 duration = time.monotonic() - start
                 log.info(
-                    f"action_executed operand={leaf.id} request={request.id}"
+                    f"action_executed operand={working.id} request={request.id}"
                     f" action={request.action_name} method={request.method_name}"
-                    f" ok={result.error is None} proposals={len(result.action_description_requests)}"
+                    f" proposals={len(result.action_description_requests)}"
                     f" duration={duration:.3f}s"
                 )
-                if result.error:
-                    log.warning(f"action_error operand={leaf.id} request={request.id} error={result.error!r}")
-                if kind == "null":
-                    executed_null = True
+                if action.kind == "null":
+                    return
+                i += 1
 
-            if executed_null:
-                return
+            current = working

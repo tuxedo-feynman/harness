@@ -50,22 +50,50 @@ Custom config path:
 python -m harness.main --config path/to/config.yaml "Hello"
 ```
 
-## Thinking actions
+## Actions
 
-Set `thinking_action.type` in `config.yaml`:
+Actions are registered from the `actions` section of `config.yaml`; each entry
+gets its own config block. The null action is always present. Multiple thinking
+actions can be registered at once — `default_thinking_action` names the one the
+policy controller routes to.
 
-| Type | Description |
-|------|-------------|
-| `fake` | Canned responses, no network (default) |
+| Action | Description |
+|--------|-------------|
+| `terminal` | Prints to / reads from the local terminal |
+| `telegram` | Telegram bot channel — send and receive via the Bot API (no extra dependency) |
+| `fake` | Canned thinking action, no network (default) |
 | `openai` | OpenAI wire format — works with llama-server or the real OpenAI API |
+
+## Channels
+
+In `--chat` mode every action with a listening method (`terminal.read`, `telegram.receive`)
+gets a listener: a pending operand that resolves when a message arrives on that
+channel. All channels share one history — a conversation started on the terminal
+can be continued from Telegram and vice versa. `quit` closes the channel it was
+typed on; the process exits when no channels are listening.
+
+To enable Telegram, create a bot with [@BotFather](https://t.me/BotFather) and add
+to `config.yaml` (gitignored — tokens are safe there):
+
+```yaml
+actions:
+  terminal:
+  fake:
+  telegram:
+    token: "123456:your-bot-token"
+    # chat_id: 123456789   # optional: pin to one chat
+```
 
 For a local [llama.cpp](https://github.com/ggerganov/llama.cpp) model:
 
 ```yaml
-thinking_action:
-  type: openai
-  base_url: http://localhost:8080/v1
-  model: local
+actions:
+  terminal:
+  openai:
+    base_url: http://localhost:8080/v1
+    model: local
+
+default_thinking_action: openai
 ```
 
 Start the server with:

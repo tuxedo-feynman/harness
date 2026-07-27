@@ -7,20 +7,22 @@ from harness.models import ActionDescription, ActionResult
 from harness.policy import PolicyController
 
 
-def test_primary_path_attaches_thinking_after_user_input():
+def test_primary_path_attaches_thinking_after_listener_resolves():
     directory = ActionDirectory([NullAction(), TerminalAction(), FakeThinkingAction()])
     builder = ContextBuilder(system_prompt="sys", action_directory=directory)
-    policy = PolicyController(directory, thinking_action_name="fake")
+    policy = PolicyController(directory, builder, thinking_action_name="fake")
 
-    builder.add_operand(
+    root = builder.add_root()
+    listener = builder.add_operand(
+        parent=root,
         action_requests=[
             ActionDescription(id="ad-1", action_name="terminal", method_name="read")
         ],
         action_results=[ActionResult(contents="hello")],
     )
-    leaf = builder.add_operand()
+    working = builder.add_operand(parent=listener)
 
-    evaluated = policy.evaluate(leaf, builder.build())
+    evaluated = policy.evaluate(working, builder.build(working))
 
     assert len(evaluated.action_requests) == 1
     assert evaluated.action_requests[0].action_name == "fake"

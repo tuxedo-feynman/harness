@@ -20,7 +20,8 @@ class TerminalAction(Action):
         ),
         "read": Action.MethodDescription(
             name="read",
-            description="Read one line of input from the user's terminal.",
+            description="Wait for the user's next line of terminal input.",
+            listen=True,
         ),
     }
 
@@ -28,9 +29,9 @@ class TerminalAction(Action):
         if method_name == "print":
             text = arguments.get("text")
             if not isinstance(text, str):
-                return ActionResult(contents="", error="'text' must be a string")
+                raise ValueError("'text' must be a string")
             print(text)
             return ActionResult(contents=text)
         if method_name == "read":
-            return ActionResult(contents=input())
-        return ActionResult(contents="", error=f"Unknown method: {method_name!r}")
+            return ActionResult(contents=input("> "))
+        raise ValueError(f"Unknown method: {method_name!r}")

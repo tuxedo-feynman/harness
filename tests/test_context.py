@@ -10,10 +10,15 @@ def _builder() -> ContextBuilder:
     return ContextBuilder(system_prompt="sys", action_directory=directory)
 
 
-def test_first_operand_is_root_and_later_operands_chain_onto_the_leaf():
+def test_build_walks_ancestor_path_from_root_to_anchor():
     builder = _builder()
-    root = builder.add_operand()
-    child = builder.add_operand()
+    root = builder.add_root()
+    child = builder.add_operand(parent=root)
+    sibling = builder.add_operand(parent=root)
+    grandchild = builder.add_operand(parent=child)
+
+    context = builder.build(grandchild)
+
     assert root.parent is None
-    assert child.parent == root.id
-    assert builder.leaf() is child
+    assert [op.id for op in context.history] == [root.id, child.id, grandchild.id]
+    assert sibling.id not in [op.id for op in context.history]

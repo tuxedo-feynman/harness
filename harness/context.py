@@ -9,43 +9,83 @@ log = logging.getLogger(__name__)
 
 
 class ContextBuilder:
-    """Owns the flat, ever-growing operand list for the life of the process.
+    """Owns the operand tree for the life of the process. The tree (parent
+    pointers) is the sole source of truth; the flat list is storage only.
 
-    The first operand added is the root (parent=None). Every later operand
-    attaches as a child of the current leaf, so history is a chain.
+    Invariants: children only attach beneath resolved operands, so unresolved
+    operands are always leaves. Resolved operands are immutable history;
+    unresolved operands are live state -- filled by Policy, moved here.
     """
 
     def __init__(self, system_prompt: str, action_directory: ActionDirectory):
         self.system_prompt = system_prompt
         self.action_directory = action_directory
         self._operands: list[Operand] = []
+        self._by_id: dict[str, Operand] = {}
+        self._listeners: dict[str, Operand] = {}  # channel action name -> pending operand
 
-    def leaf(self) -> Operand | None:
-        return self._operands[-1] if self._operands else None
+    def add_root(self) -> Operand:
+        """The synthetic session-start operand. Initial listeners attach to it."""
+        if self._operands:
+            raise RuntimeError("Root operand already exists")
+        return self._add(parent_id=None)
 
     def add_operand(
         self,
+        parent: Operand,
         action_requests: list[ActionDescription] | None = None,
         action_results: list[ActionResult] | None = None,
     ) -> Operand:
-        parent = self._operands[-1].id if self._operands else None
+        return self._add(parent.id, action_requests, action_results)
+
+    def _add(
+        self,
+        parent_id: str | None,
+        action_requests: list[ActionDescription] | None = None,
+        action_results: list[ActionResult] | None = None,
+    ) -> Operand:
         operand = Operand(
             id=new_id(),
             created_at=datetime.now(timezone.utc),
-            parent=parent,
+            parent=parent_id,
             action_requests=list(action_requests or []),
             action_results=list(action_results or []),
         )
         self._operands.append(operand)
+        self._by_id[operand.id] = operand
         log.info(f"operand_created id={operand.id} parent={operand.parent}")
         return operand
 
-    def find(self, operand_id: str) -> Operand | None:
-        return next((op for op in self._operands if op.id == operand_id), None)
+    def move(self, operand: Operand, new_parent: Operand) -> None:
+        """Reparent a pending operand. Only unresolved operands (live state,
+        e.g. armed listeners) may move; resolved operands are history."""
+        if operand.resolved:
+            raise RuntimeError(f"Cannot move resolved operand {operand.id}")
+        log.info(f"operand_moved id={operand.id} from={operand.parent} to={new_parent.id}")
+        operand.parent = new_parent.id
 
-    def build(self) -> Context:
+    def park_listener(self, channel: str, operand: Operand) -> None:
+        self._listeners[channel] = operand
+
+    def pop_listener(self, channel: str) -> Operand | None:
+        return self._listeners.pop(channel, None)
+
+    def listener_channels(self) -> set[str]:
+        return set(self._listeners)
+
+    def build(self, anchor: Operand) -> Context:
+        """Context as seen from anchor: history is the ancestor path from the
+        root to anchor. Pending listeners and dead branches are off-path and
+        excluded automatically."""
+        path: list[Operand] = []
+        cursor: Operand | None = anchor
+        while cursor is not None:
+            path.append(cursor)
+            cursor = self._by_id.get(cursor.parent) if cursor.parent else None
+        path.reverse()
         return Context(
             system_prompt=self.system_prompt,
-            history=list(self._operands),
+            history=path,
             available_actions=self.action_directory.method_index(),
+            listeners=list(self._listeners.values()),
         )

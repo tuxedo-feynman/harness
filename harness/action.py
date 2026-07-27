@@ -19,6 +19,9 @@ class Action(ABC):
         name: str
         description: str
         parameters_schema: dict[str, Any] = field(default_factory=dict)
+        # listen methods park as pending listener operands instead of
+        # executing to completion (e.g. terminal.read, telegram.receive)
+        listen: bool = False
 
     name: str
     kind: ActionKind

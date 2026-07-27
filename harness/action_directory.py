@@ -21,12 +21,3 @@ class ActionDirectory:
             name: AvailableAction(kind=action.kind, methods=dict(action.methods))
             for name, action in self._actions.items()
         }
-
-    def descriptions(self) -> str:
-        """Human-readable summary of every action. For logging/debugging."""
-        lines = []
-        for action in self._actions.values():
-            lines.append(f"{action.name} ({action.kind}): {action.description}")
-            for method in action.methods.values():
-                lines.append(f"  .{method.name}: {method.description}")
-        return "\n".join(lines)
