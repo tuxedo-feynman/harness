@@ -175,9 +175,10 @@ def summary_table(samples):
 
 
 def line_chart(points, fmt="{:.1f}", height=8, width=60):
-    """Text line chart of (elapsed, value) points, one column per time bucket,
-    consecutive levels joined vertically so the line reads as connected.
-    Fenced as a code block so it renders monospaced in any markdown viewer."""
+    """Text line chart of (elapsed, value) points, one column per time bucket.
+    The series is traced with box-drawing glyphs — runs, corners, and vertical
+    connectors — so it reads as a line, not bars. Fenced as a code block so it
+    renders monospaced in any markdown viewer."""
     if len(points) > width:
         last = len(points) - 1
         points = [points[round(i * last / (width - 1))] for i in range(width)]
@@ -188,20 +189,25 @@ def line_chart(points, fmt="{:.1f}", height=8, width=60):
     grid = [[" "] * len(levels) for _ in range(height)]  # row 0 = bottom
     previous = levels[0]
     for column, level in enumerate(levels):
-        bottom, top = sorted((previous, level))
-        for row in range(bottom, top + 1):
-            grid[row][column] = "█"
+        if level == previous:
+            grid[level][column] = "─"
+        else:
+            rising = level > previous
+            grid[level][column] = "╭" if rising else "╰"
+            grid[previous][column] = "╯" if rising else "╮"
+            for row in range(min(previous, level) + 1, max(previous, level)):
+                grid[row][column] = "│"
         previous = level
     lines = ["```"]
     for row in range(height - 1, -1, -1):
         if row == height - 1:
-            label = f"{fmt.format(hi):>8} |"
+            label = f"{fmt.format(hi):>8} ┤"
         elif row == 0:
-            label = f"{fmt.format(lo):>8} |"
+            label = f"{fmt.format(lo):>8} ┤"
         else:
-            label = " " * 9 + "|"
+            label = " " * 9 + "│"
         lines.append(label + "".join(grid[row]))
-    lines.append(" " * 9 + "+" + "-" * len(levels))
+    lines.append(" " * 9 + "└" + "─" * len(levels))
     end = f"{points[-1][0]:.0f}s"
     lines.append(" " * 10 + "0s" + end.rjust(max(len(levels) - 2, len(end))))
     lines.append("```")
