@@ -164,20 +164,22 @@ def test_quit_attaches_null_and_moves_uncles():
     builder.move.assert_called_once_with(uncle, listener)
 
 
-def test_empty_input_rearms_listener_without_thinking():
-    builder = Mock(spec=ContextBuilder)
-    policy, directory = _utility_get_policy(builder)
+def test_empty_input_gets_a_canned_reply_on_the_same_channel():
+    policy, directory = _utility_get_policy()
+    # a voice note: the channel heard something it couldn't turn into text
     listener = _utility_get_operand(
         "listener", None,
-        requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        results=[ActionResult(contents="   ")],
+        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
+        results=[ActionResult(contents="", metadata={"chat_id": "42", "username": "u"})],
     )
     working = _utility_get_operand("working", "listener")
 
     evaluated = policy.evaluate(working, _utility_get_context(directory, [listener, working]))
 
-    assert evaluated.action_requests[0].action_name == "terminal"
-    assert evaluated.action_requests[0].method_name == "listen"
+    request = evaluated.action_requests[0]
+    assert request.action_name == "telegram"
+    assert request.method_name == "send"
+    assert request.method_parameters == {"text": "I didn't get that.", "chat_id": "42"}
 
 
 def test_delivery_routes_to_origin_channel_with_metadata():

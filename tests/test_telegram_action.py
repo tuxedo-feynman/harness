@@ -51,8 +51,19 @@ def test_accept_edge_cases():
     by_id = TelegramAction(TelegramActionConfig(token="t", chat_ids=[7]))
     assert by_id._accept(_utility_get_update("hi", 7, "anyone")) is not None
 
-    assert unfiltered._accept({"update_id": 1}) is None  # no message
-    assert unfiltered._accept({"update_id": 2, "message": {"chat": {"id": 7}}}) is None  # no text
+    assert unfiltered._accept({"update_id": 1}) is None  # no chat: nowhere to reply
+
+    # unsupported content from an allowed chat becomes an empty-content
+    # stimulus so Policy can reply honestly
+    voice = unfiltered._accept(
+        {"update_id": 2, "message": {"chat": {"id": 7, "username": "anyone"}, "voice": {}}}
+    )
+    assert voice is not None
+    assert voice.contents == ""
+    assert voice.metadata == {"chat_id": "7", "username": "anyone"}
+
+    # but unsupported content from a non-allowed chat is still dropped
+    assert by_id._accept({"update_id": 3, "message": {"chat": {"id": 99}, "voice": {}}}) is None
 
 
 def test_listen_skips_filtered_updates_within_one_poll():

@@ -88,12 +88,14 @@ class TelegramAction(Action):
     def _accept(self, update: dict[str, Any]) -> ActionResult | None:
         """Build the result for an update if its chat passes the allow-list
         (entries match on numeric chat id or @username). Sender identity is
-        event data, so it travels in the result's metadata."""
+        event data, so it travels in the result's metadata. Messages from an
+        allowed chat with unsupported content (voice, photo, ...) become
+        empty-content stimuli so Policy can reply honestly."""
         message = update.get("message") or {}
-        text = message.get("text")
         chat = message.get("chat") or {}
         chat_id = chat.get("id")
-        if not isinstance(text, str) or chat_id is None:
+        if chat_id is None:
+            log.warning(f"telegram_update_skipped reason=no_chat keys={sorted(update.keys())}")
             return None
         username = (chat.get("username") or "").lower()
         if self.config.chat_ids and not self._allowed(chat_id, username):
@@ -101,11 +103,22 @@ class TelegramAction(Action):
                 f"telegram_message_ignored chat_id={chat_id} username={username or '?'} reason=not_in_chat_ids"
             )
             return None
+        metadata = {"chat_id": str(chat_id), "username": username}
+        text = message.get("text")
+        if not isinstance(text, str):
+            kinds = [
+                k
+                for k in ("voice", "audio", "photo", "video", "video_note",
+                          "document", "sticker", "location", "contact")
+                if k in message
+            ]
+            log.warning(
+                f"telegram_message_unsupported chat_id={chat_id}"
+                f" types={kinds or sorted(message.keys())}"
+            )
+            return ActionResult(contents="", metadata=metadata)
         log.info(f"telegram_message_accepted chat_id={chat_id} username={username or '?'}")
-        return ActionResult(
-            contents=text,
-            metadata={"chat_id": str(chat_id), "username": username},
-        )
+        return ActionResult(contents=text, metadata=metadata)
 
     def _allowed(self, chat_id: Any, username: str) -> bool:
         for allowed in self.config.chat_ids:

@@ -9,6 +9,7 @@ from harness.models import ActionDescription, ActionResult, Context, Operand
 log = logging.getLogger(__name__)
 
 QUIT_WORDS = {"quit", "exit", "q"}
+EMPTY_INPUT_REPLY = "I didn't get that."
 
 
 class PolicyController:
@@ -51,14 +52,16 @@ class PolicyController:
 
         stimulus = self._resolved_listen(prev)
         if stimulus is not None:
-            channel, contents = stimulus
-            text = contents.strip()
+            channel, result = stimulus
+            text = result.contents.strip()
             if text.lower() in QUIT_WORDS:
                 self._attach_null(operand, reason=f"channel_quit channel={channel}")
                 self._move_uncles(context, prev)
             elif not text:
-                self._attach_listen(operand, channel, reason="empty_input")
-                self._move_uncles(context, prev)
+                # The channel heard something it couldn't turn into text
+                # (voice note, photo, blank line). Say so, honestly, on the
+                # same channel; the normal turn flow then re-arms listening.
+                self._attach_delivery(operand, channel, EMPTY_INPUT_REPLY, result.metadata)
             else:
                 self._attach_thinking(operand, reason="stimulus_received")
             return operand
@@ -91,11 +94,11 @@ class PolicyController:
         return operand
 
     @staticmethod
-    def _resolved_listen(prev: Operand) -> tuple[str, str] | None:
-        """(channel, contents) of prev's resolved listen request, if any."""
+    def _resolved_listen(prev: Operand) -> tuple[str, ActionResult] | None:
+        """(channel, result) of prev's resolved listen request, if any."""
         for request, result in zip(prev.action_requests, prev.action_results):
             if request.method_name == LISTEN_METHOD:
-                return request.action_name, result.contents
+                return request.action_name, result
         return None
 
     @staticmethod
