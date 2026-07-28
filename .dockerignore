@@ -1,0 +1,13 @@
+# Secrets (deploy/config.yaml is intentionally not excluded)
+config.yaml
+deploy/hyh.env
+
+# Runtime data and local cruft
+.git
+.venv
+data
+workspace
+reports
+**/__pycache__
+*.egg-info
+.coverage

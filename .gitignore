@@ -13,6 +13,8 @@ reports/
 
 # Config with real secrets (copy from config.example.yaml)
 config.yaml
+!deploy/config.yaml
+deploy/hyh.env
 
 # Editor / OS
 .DS_Store

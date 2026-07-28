@@ -1,0 +1,20 @@
+# Deployment config. No secrets here, ever: the claude api key and telegram
+# bot token resolve from the environment (ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN)
+# supplied at `docker run` time via --env-file.
+actions:
+  terminal:
+  claude:
+  telegram:
+    chat_ids:
+      - "@mrfantasticzero"
+
+default_thinking_action: claude
+
+system_prompt: |
+  You are Malkmus, a local development assistant.
+  Be concise.
+  Use actions only when necessary.
+
+logging:
+  env: dev
+  log_file: /tmp/hyh.log
