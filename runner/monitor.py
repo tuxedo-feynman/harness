@@ -174,10 +174,10 @@ def summary_table(samples):
     return lines
 
 
-def timeline_chart(samples, height=8, width=60):
-    """Block chart of process RSS over the run, one column per time bucket.
+def line_chart(points, fmt="{:.1f}", height=8, width=60):
+    """Text line chart of (elapsed, value) points, one column per time bucket,
+    consecutive levels joined vertically so the line reads as connected.
     Fenced as a code block so it renders monospaced in any markdown viewer."""
-    points = [(s["elapsed"], s["rss_bytes"] / 2**20) for s in samples]
     if len(points) > width:
         last = len(points) - 1
         points = [points[round(i * last / (width - 1))] for i in range(width)]
@@ -185,20 +185,42 @@ def timeline_chart(samples, height=8, width=60):
     lo, hi = min(values), max(values)
     span = hi - lo
     levels = [round((v - lo) / span * (height - 1)) if span else 0 for v in values]
+    grid = [[" "] * len(levels) for _ in range(height)]  # row 0 = bottom
+    previous = levels[0]
+    for column, level in enumerate(levels):
+        bottom, top = sorted((previous, level))
+        for row in range(bottom, top + 1):
+            grid[row][column] = "█"
+        previous = level
     lines = ["```"]
     for row in range(height - 1, -1, -1):
         if row == height - 1:
-            label = f"{hi:8.1f} |"
+            label = f"{fmt.format(hi):>8} |"
         elif row == 0:
-            label = f"{lo:8.1f} |"
+            label = f"{fmt.format(lo):>8} |"
         else:
             label = " " * 9 + "|"
-        lines.append(label + "".join("█" if level >= row else " " for level in levels))
+        lines.append(label + "".join(grid[row]))
     lines.append(" " * 9 + "+" + "-" * len(levels))
     end = f"{points[-1][0]:.0f}s"
     lines.append(" " * 10 + "0s" + end.rjust(max(len(levels) - 2, len(end))))
     lines.append("```")
     return lines
+
+
+def timeline_charts(samples):
+    """One line chart per timeline metric."""
+    specs = [
+        ("Process RSS (MB)", lambda s: s["rss_bytes"] / 2**20, "{:.1f}"),
+        ("Process CPU %", lambda s: s["cpu_percent"], "{:.1f}"),
+        ("Threads", lambda s: s["threads"], "{:.0f}"),
+    ]
+    lines = []
+    for title, get, fmt in specs:
+        lines += [f"### {title}", ""]
+        lines += line_chart([(s["elapsed"], get(s)) for s in samples], fmt)
+        lines.append("")
+    return lines[:-1]
 
 
 def write_report(path, command, started, ended, exit_code, interval, samples):
@@ -226,16 +248,18 @@ def write_report(path, command, started, ended, exit_code, interval, samples):
             f"- Bytes received: {human_bytes(recv)}",
             "- Caveat: network counters are host-wide, not scoped to the monitored process.",
             "",
-            "## Timeline — process RSS (MB)",
+            "## Timeline",
             "",
         ]
-        lines += timeline_chart(samples)
+        lines += timeline_charts(samples)
     else:
         lines += ["No samples collected (child exited before it could be sampled).", ""]
     lines += [
         "",
         "## Notes",
         "",
+        "- RSS (resident set size) is the physical RAM the process tree holds —",
+        "  excluding swapped-out pages and reserved-but-unused virtual memory.",
         "- The first sample's CPU figures (per-process and system-wide) are 0.0 baselines,",
         "  which skews the Summary Min/Mean for the CPU rows low.",
         "- Network byte counts are host-wide, not process-scoped.",
