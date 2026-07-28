@@ -8,6 +8,10 @@ actions:
   # openai:             # OpenAI-compatible API (llama-server or the real thing)
   #   model: local
   #   base_url: http://localhost:8080/v1
+  # claude:             # Anthropic Claude
+  #   api_key: "sk-ant-..."   # optional: omit to resolve from ANTHROPIC_API_KEY
+  #   model: claude-opus-5
+  #   max_tokens: 16000
   # telegram:           # Telegram bot channel (listens alongside terminal in --chat)
   #   token: "123456:your-bot-token"
   #   chat_ids:            # allow-list: numeric chat ids or "@username" entries.

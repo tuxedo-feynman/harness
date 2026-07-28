@@ -58,9 +58,7 @@ class ContextBuilder:
 
     def move(self, operand: Operand, new_parent: Operand) -> None:
         """Reparent a pending operand. Only unresolved operands (live state,
-        e.g. armed listeners) may move; resolved operands are history."""
-        if operand.resolved:
-            raise RuntimeError(f"Cannot move resolved operand {operand.id}")
+        e.g. armed listeners) are ever moved; resolved operands are history."""
         log.info(f"operand_moved id={operand.id} from={operand.parent} to={new_parent.id}")
         operand.parent = new_parent.id
 

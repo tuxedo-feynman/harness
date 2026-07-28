@@ -1,16 +1,16 @@
 from typing import Any
 
-from harness.action import Action
+from harness.action import LISTEN_METHOD, SEND_METHOD, Action
 from harness.models import ActionResult, Context
 
 
 class TerminalAction(Action):
     name = "terminal"
     kind = "effect"
-    description = "The local terminal: prints text to the user, reads user input."
+    description = "The local terminal: sends text to the user, listens for their input."
     methods = {
-        "print": Action.MethodDescription(
-            name="print",
+        SEND_METHOD: Action.MethodDescription(
+            name=SEND_METHOD,
             description="Print text to the user's terminal.",
             parameters_schema={
                 "type": "object",
@@ -18,20 +18,19 @@ class TerminalAction(Action):
                 "required": ["text"],
             },
         ),
-        "read": Action.MethodDescription(
-            name="read",
+        LISTEN_METHOD: Action.MethodDescription(
+            name=LISTEN_METHOD,
             description="Wait for the user's next line of terminal input.",
-            listen=True,
         ),
     }
 
     def run(self, method_name: str, arguments: dict[str, Any], context: Context) -> ActionResult:
-        if method_name == "print":
+        if method_name == SEND_METHOD:
             text = arguments.get("text")
             if not isinstance(text, str):
                 raise ValueError("'text' must be a string")
-            print(text)
+            print(text, flush=True)
             return ActionResult(contents=text)
-        if method_name == "read":
+        if method_name == LISTEN_METHOD:
             return ActionResult(contents=input("> "))
         raise ValueError(f"Unknown method: {method_name!r}")

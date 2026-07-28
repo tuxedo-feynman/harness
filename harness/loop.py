@@ -1,6 +1,7 @@
 import logging
 import time
 
+from harness.action import LISTEN_METHOD
 from harness.action_directory import ActionDirectory
 from harness.context import ContextBuilder
 from harness.models import Operand
@@ -38,9 +39,8 @@ class ExecutionLoop:
             while i < len(working.action_requests):
                 request = working.action_requests[i]
                 action = self.action_directory.get(request.action_name)
-                method = action.methods.get(request.method_name)
 
-                if method is not None and method.listen:
+                if request.method_name == LISTEN_METHOD and LISTEN_METHOD in action.methods:
                     dropped = len(working.action_requests) - (i + 1)
                     if dropped:
                         log.warning(

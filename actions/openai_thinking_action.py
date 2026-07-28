@@ -2,7 +2,7 @@ import json
 import os
 from typing import Any
 
-from harness.action import Action
+from harness.action import LISTEN_METHOD, THINKING_METHOD, Action
 from harness.config import ThinkingActionConfig
 from harness.models import ActionDescription, ActionResult, Context
 
@@ -17,8 +17,8 @@ class OpenAIThinkingAction(Action):
     kind = "thinking"
     description = "OpenAI-compatible chat completion API."
     methods = {
-        "complete": Action.MethodDescription(
-            name="complete",
+        THINKING_METHOD: Action.MethodDescription(
+            name=THINKING_METHOD,
             description="Send the current context to the model, return its decision.",
         )
     }
@@ -27,7 +27,7 @@ class OpenAIThinkingAction(Action):
         self.config = config
 
     def run(self, method_name: str, arguments: dict[str, Any], context: Context) -> ActionResult:
-        if method_name != "complete":
+        if method_name != THINKING_METHOD:
             raise ValueError(f"Unknown method: {method_name!r}")
 
         tools, lookup = self._build_tools(context)
@@ -78,7 +78,7 @@ class OpenAIThinkingAction(Action):
         for operand in context.history:
             for request, result in zip(operand.action_requests, operand.action_results):
                 kind = self._kind_of(context, request.action_name)
-                if self._is_listen(context, request):
+                if request.method_name == LISTEN_METHOD:
                     messages.append({"role": "user", "content": result.contents})
                 elif kind == "thinking":
                     message: dict[str, Any] = {
@@ -135,11 +135,3 @@ class OpenAIThinkingAction(Action):
     def _kind_of(context: Context, action_name: str) -> str | None:
         available = context.available_actions.get(action_name)
         return available.kind if available else None
-
-    @staticmethod
-    def _is_listen(context: Context, request: ActionDescription) -> bool:
-        available = context.available_actions.get(request.action_name)
-        if available is None:
-            return False
-        method = available.methods.get(request.method_name)
-        return bool(method and method.listen)

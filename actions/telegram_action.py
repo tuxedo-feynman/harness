@@ -1,47 +1,46 @@
 import json
 import logging
+import time
+import urllib.error
 import urllib.request
 from typing import Any
 
-from harness.action import Action
+from harness.action import LISTEN_METHOD, SEND_METHOD, Action
 from harness.config import TelegramActionConfig
 from harness.models import ActionResult, Context
 
 log = logging.getLogger("harness." + __name__)
 
 POLL_SECONDS = 50
+RECONNECT_SECONDS = 5
 
 
 class TelegramAction(Action):
     """Telegram bot channel via the Bot API (stdlib HTTP, no dependency).
-    receive long-polls getUpdates; send posts sendMessage. Stateless with
+    listen long-polls getUpdates; send posts sendMessage. Stateless with
     respect to chats: the allow-list lives in config, the send target is a
-    parameter (falling back to the sole numeric configured chat id).
+    required parameter (Policy supplies it from the stimulus metadata).
     """
 
     name = "telegram"
     kind = "effect"
     description = "Telegram bot channel: message the user on Telegram."
     methods = {
-        "send": Action.MethodDescription(
-            name="send",
+        SEND_METHOD: Action.MethodDescription(
+            name=SEND_METHOD,
             description="Send a text message to a Telegram chat.",
             parameters_schema={
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "Text to send"},
-                    "chat_id": {
-                        "type": "string",
-                        "description": "Numeric Telegram chat id. Optional if exactly one numeric chat id is configured.",
-                    },
+                    "chat_id": {"type": "string", "description": "Numeric Telegram chat id"},
                 },
-                "required": ["text"],
+                "required": ["text", "chat_id"],
             },
         ),
-        "receive": Action.MethodDescription(
-            name="receive",
+        LISTEN_METHOD: Action.MethodDescription(
+            name=LISTEN_METHOD,
             description="Wait for the next Telegram message from an allowed chat.",
-            listen=True,
         ),
     }
 
@@ -50,37 +49,41 @@ class TelegramAction(Action):
         self._offset = 0
 
     def run(self, method_name: str, arguments: dict[str, Any], context: Context) -> ActionResult:
-        if method_name == "send":
+        if method_name == SEND_METHOD:
             text = arguments.get("text")
+            chat_id = arguments.get("chat_id")
             if not isinstance(text, str):
                 raise ValueError("'text' must be a string")
-            self._api("sendMessage", {"chat_id": self._send_target(arguments), "text": text})
+            if chat_id is None:
+                raise ValueError("'chat_id' is required")
+            self._api("sendMessage", {"chat_id": str(chat_id), "text": text})
             return ActionResult(contents=text)
-        if method_name == "receive":
+        if method_name == LISTEN_METHOD:
             while True:
-                response = self._api(
-                    "getUpdates",
-                    {"timeout": POLL_SECONDS, "offset": self._offset, "allowed_updates": ["message"]},
-                )
+                try:
+                    response = self._api(
+                        "getUpdates",
+                        {"timeout": POLL_SECONDS, "offset": self._offset, "allowed_updates": ["message"]},
+                    )
+                except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
+                    # Transport lifecycle, not a system failure: idle long-poll
+                    # connections get reset routinely (NAT timeouts, wifi
+                    # transitions). Reconnect after a pause. Everything else —
+                    # bad token, API errors, send failures — still crashes.
+                    log.warning(f"telegram_poll_reconnect error={e!r}")
+                    time.sleep(RECONNECT_SECONDS)
+                    continue
                 for update in response.get("result", []):
                     self._offset = update["update_id"] + 1
                     result = self._accept(update)
                     if result is not None:
+                        # Ack immediately: getUpdates only confirms consumption
+                        # via the next call's offset. Without this, the final
+                        # message before shutdown (e.g. "quit") is redelivered
+                        # to the next process.
+                        self._api("getUpdates", {"offset": self._offset, "timeout": 0, "limit": 1})
                         return result
         raise ValueError(f"Unknown method: {method_name!r}")
-
-    def _send_target(self, arguments: dict[str, Any]) -> str:
-        explicit = arguments.get("chat_id")
-        if explicit is not None:
-            return str(explicit)
-        numeric = [str(c) for c in self.config.chat_ids if str(c).lstrip("-").isdigit()]
-        if len(numeric) == 1:
-            return numeric[0]
-        raise ValueError(
-            "Cannot determine send target: pass 'chat_id' or configure exactly one"
-            " numeric entry in telegram chat_ids (usernames cannot be send targets"
-            " for private chats — the numeric id is logged when a message arrives)"
-        )
 
     def _accept(self, update: dict[str, Any]) -> ActionResult | None:
         """Build the result for an update if its chat passes the allow-list

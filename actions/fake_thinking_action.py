@@ -1,7 +1,7 @@
 from typing import Any
 
-from harness.action import Action
-from harness.models import ActionDescription, ActionResult, Context
+from harness.action import LISTEN_METHOD, THINKING_METHOD, Action
+from harness.models import ActionResult, Context
 
 
 class FakeThinkingAction(Action):
@@ -15,8 +15,8 @@ class FakeThinkingAction(Action):
     kind = "thinking"
     description = "Fake AI for tests: canned responses, no network."
     methods = {
-        "complete": Action.MethodDescription(
-            name="complete",
+        THINKING_METHOD: Action.MethodDescription(
+            name=THINKING_METHOD,
             description="Return the next canned decision.",
         )
     }
@@ -34,16 +34,8 @@ class FakeThinkingAction(Action):
             result.contents
             for operand in context.history
             for request, result in zip(operand.action_requests, operand.action_results)
-            if self._is_listen(context, request) and result.contents.strip()
+            if request.method_name == LISTEN_METHOD and result.contents.strip()
         ]
         if len(user_inputs) <= 1:
             return ActionResult(contents="Hello! How can I help you?")
         return ActionResult(contents=f"[fake] {user_inputs[-1]}")
-
-    @staticmethod
-    def _is_listen(context: Context, request: ActionDescription) -> bool:
-        available = context.available_actions.get(request.action_name)
-        if available is None:
-            return False
-        method = available.methods.get(request.method_name)
-        return bool(method and method.listen)

@@ -1,5 +1,6 @@
 import logging
 
+from harness.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD
 from harness.action_directory import ActionDirectory
 from harness.context import ContextBuilder
 from harness.logger import new_id
@@ -7,10 +8,7 @@ from harness.models import ActionDescription, ActionResult, Context, Operand
 
 log = logging.getLogger(__name__)
 
-THINKING_METHOD = "complete"  # convention: every thinking action exposes this
 QUIT_WORDS = {"quit", "exit", "q"}
-# channel action -> the method that delivers a response on that channel
-DELIVERY_METHODS = {"terminal": "print", "telegram": "send"}
 
 
 class PolicyController:
@@ -72,14 +70,14 @@ class PolicyController:
             if origin is None:
                 self._attach_null(operand, reason="no_origin_channel")
             elif text:
-                channel, stimulus = origin
-                self._attach_delivery(operand, channel, text, stimulus.metadata)
+                channel, stimulus_result = origin
+                self._attach_delivery(operand, channel, text, stimulus_result.metadata)
             else:
                 self._attach_listen(operand, origin[0], reason="empty_thinking_result")
                 self._move_uncles(context, prev)
             return operand
 
-        if prev.action_requests and self._all_delivery_or_null(prev):
+        if prev.action_requests and self._all_delivery(prev):
             origin = self._origin_stimulus(context)
             if origin is None:
                 self._attach_null(operand, reason="no_origin_channel")
@@ -92,23 +90,21 @@ class PolicyController:
         self._attach_thinking(operand, reason="effect_results_pending")
         return operand
 
-    def _is_listen(self, request: ActionDescription) -> bool:
-        method = self.action_directory.get(request.action_name).methods.get(request.method_name)
-        return bool(method and method.listen)
-
-    def _resolved_listen(self, prev: Operand) -> tuple[str, str] | None:
+    @staticmethod
+    def _resolved_listen(prev: Operand) -> tuple[str, str] | None:
         """(channel, contents) of prev's resolved listen request, if any."""
         for request, result in zip(prev.action_requests, prev.action_results):
-            if self._is_listen(request):
+            if request.method_name == LISTEN_METHOD:
                 return request.action_name, result.contents
         return None
 
-    def _origin_stimulus(self, context: Context) -> tuple[str, "ActionResult"] | None:
+    @staticmethod
+    def _origin_stimulus(context: Context) -> tuple[str, ActionResult] | None:
         """(channel, result) of the stimulus that started the current branch:
         the most recent resolved listen result on the ancestor path."""
         for operand in reversed(context.history):
             for request, result in zip(operand.action_requests, operand.action_results):
-                if self._is_listen(request):
+                if request.method_name == LISTEN_METHOD:
                     return request.action_name, result
         return None
 
@@ -119,12 +115,9 @@ class PolicyController:
                 index = i
         return index
 
-    def _all_delivery_or_null(self, prev: Operand) -> bool:
-        for req in prev.action_requests:
-            is_delivery = DELIVERY_METHODS.get(req.action_name) == req.method_name
-            if not (is_delivery or req.action_name == "null"):
-                return False
-        return True
+    @staticmethod
+    def _all_delivery(prev: Operand) -> bool:
+        return all(req.method_name == SEND_METHOD for req in prev.action_requests)
 
     def _move_uncles(self, context: Context, new_parent: Operand) -> None:
         """Bring the other channels' pending listeners to the current tip so
@@ -150,23 +143,20 @@ class PolicyController:
         log.info(f"policy operand={operand.id} decision=attach_null reason={reason}")
 
     def _attach_listen(self, operand: Operand, channel: str, reason: str) -> None:
-        action = self.action_directory.get(channel)
-        method = next(m for m in action.methods.values() if m.listen)
         operand.action_requests = [
-            ActionDescription(id=new_id(), action_name=channel, method_name=method.name)
+            ActionDescription(id=new_id(), action_name=channel, method_name=LISTEN_METHOD)
         ]
         log.info(f"policy operand={operand.id} decision=attach_listen channel={channel} reason={reason}")
 
     def _attach_delivery(
         self, operand: Operand, channel: str, text: str, metadata: dict | None = None
     ) -> None:
-        method_name = DELIVERY_METHODS[channel]
         schema_properties = (
             self.action_directory.get(channel)
-            .methods[method_name]
+            .methods[SEND_METHOD]
             .parameters_schema.get("properties", {})
         )
-        # Addressing comes from the origin stimulus: metadata keys the delivery
+        # Addressing comes from the origin stimulus: metadata keys the send
         # method declares in its schema (e.g. telegram chat_id) pass through.
         parameters = {k: v for k, v in (metadata or {}).items() if k in schema_properties}
         parameters["text"] = text
@@ -174,7 +164,7 @@ class PolicyController:
             ActionDescription(
                 id=new_id(),
                 action_name=channel,
-                method_name=method_name,
+                method_name=SEND_METHOD,
                 method_parameters=parameters,
             )
         ]

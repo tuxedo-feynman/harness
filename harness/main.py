@@ -1,6 +1,6 @@
-import logging
 import sys
 
+from harness.action import LISTEN_METHOD
 from harness.action_directory import ActionDirectory
 from harness.cli import parse_args
 from harness.config import build_actions, load_config
@@ -11,20 +11,11 @@ from harness.loop import ExecutionLoop
 from harness.models import ActionDescription, ActionResult
 from harness.policy import PolicyController
 
-# Explicit name: __name__ is "__main__" under python -m, which would fall
-# outside the "harness" logger hierarchy.
-log = logging.getLogger("harness.main")
-
 
 def main(argv=None) -> None:
     args = parse_args(argv)
 
-    try:
-        config = load_config(args.config)
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    config = load_config(args.config)
     setup_logging(config.logging)
 
     actions = build_actions(config)
@@ -36,28 +27,23 @@ def main(argv=None) -> None:
         directory, context_builder, thinking_action_name=default_thinking.name
     )
     loop = ExecutionLoop(directory, policy, context_builder)
+    root = context_builder.add_root()
 
     if args.chat:
         print("Chat mode (type 'quit' to exit)")
-        Dispatcher(directory, context_builder, loop).serve()
+        Dispatcher(directory, context_builder, loop).serve(root)
     elif args.prompt:
         # Single-shot: no listener threads. Seed the prompt as an
-        # already-resolved terminal.read stimulus and run one turn. The
+        # already-resolved terminal listen stimulus and run one turn. The
         # listener Policy parks at turn end never resolves — the process exits.
-        root = context_builder.add_root()
         stimulus = context_builder.add_operand(
             parent=root,
             action_requests=[
-                ActionDescription(id=new_id(), action_name="terminal", method_name="read")
+                ActionDescription(id=new_id(), action_name="terminal", method_name=LISTEN_METHOD)
             ],
             action_results=[ActionResult(contents=args.prompt)],
         )
-        try:
-            loop.run(stimulus)
-        except Exception as e:
-            log.exception(f"system_failure error={e!r}")
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(1)
+        loop.run(stimulus)
     else:
         print('Usage: python -m harness.main "Your message"', file=sys.stderr)
         sys.exit(1)

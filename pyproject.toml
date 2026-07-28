@@ -18,6 +18,9 @@ dev = [
 openai = [
     "openai",
 ]
+claude = [
+    "anthropic",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

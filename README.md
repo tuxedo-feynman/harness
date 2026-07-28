@@ -63,6 +63,7 @@ policy controller routes to.
 | `telegram` | Telegram bot channel — send and receive via the Bot API (no extra dependency) |
 | `fake` | Canned thinking action, no network (default) |
 | `openai` | OpenAI wire format — works with llama-server or the real OpenAI API |
+| `claude` | Anthropic Claude Messages API (`pip install -e ".[claude]"`, `ANTHROPIC_API_KEY` in env) |
 
 ## Channels
 

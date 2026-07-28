@@ -23,6 +23,13 @@ class ThinkingActionConfig:
 
 
 @dataclass
+class ClaudeActionConfig:
+    model: str = "claude-opus-5"
+    max_tokens: int = 16000
+    api_key: str | None = None  # unset = resolve from the environment (ANTHROPIC_API_KEY)
+
+
+@dataclass
 class TelegramActionConfig:
     token: str
     # Allow-list of chats: numeric chat ids or "@username" entries. Both match
@@ -65,11 +72,17 @@ def build_actions(config: Config) -> list["Action"]:
 
         return TelegramAction(TelegramActionConfig(**cfg))
 
+    def _claude(cfg: dict[str, Any]) -> "Action":
+        from actions.claude_thinking_action import ClaudeThinkingAction
+
+        return ClaudeThinkingAction(ClaudeActionConfig(**cfg))
+
     builders = {
         "terminal": lambda cfg: TerminalAction(),
         "fake": lambda cfg: FakeThinkingAction(),
         "openai": _openai,
         "telegram": _telegram,
+        "claude": _claude,
     }
 
     actions: list["Action"] = [NullAction()]

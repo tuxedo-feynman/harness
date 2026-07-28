@@ -15,7 +15,7 @@ Listeners:
 Execution Loop:
 - Anchored on a resolved stimulus operand. Creates a new working operand for each cycle, calls context builder, and passes off to policy engine.
 - Single-threaded: executes every ActionDescription in the operand's action_requests sequentially, appending each ActionResult to action_results. action_results[i] is the result of action_requests[i] -- index pairing is the provenance record.
-- Requests whose method is marked listen are PARKED (left unresolved, registered as that channel's pending listener) instead of executed.
+- Requests whose method is named listen are PARKED (left unresolved, registered as that channel's pending listener) instead of executed.
 - Holds the logic for the execution loop: Build Context --> Evaluate Policy Controls --> Execute Actions --> [[REPEAT until a listen request parks or a Null Action executes]]
 
 Dispatcher:
@@ -84,8 +84,9 @@ Action:
     name: str
     description: str
     parameters_schema: dict[str, Any]
-    listen: bool  // listen methods park as pending listener operands instead of executing (terminal.read, telegram.receive)
   )
+
+- Canonical method names are the harness's verb vocabulary -- the name IS the marker, there are no flags. Channel actions expose "listen" (wait for the world; parks as a pending listener operand) and "send" (tell the world); thinking actions expose "complete". Each action translates the verb into its underlying call (input(), getUpdates, chat.completions.create, ...). At most one listen method per action holds by construction.
 )
 
 
