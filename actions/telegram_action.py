@@ -13,6 +13,8 @@ log = logging.getLogger("harness." + __name__)
 
 POLL_SECONDS = 50
 RECONNECT_SECONDS = 5
+TRANSIENT_ERRORS = (urllib.error.URLError, ConnectionError, TimeoutError)
+API_ATTEMPTS = 3
 
 
 class TelegramAction(Action):
@@ -56,7 +58,7 @@ class TelegramAction(Action):
                 raise ValueError("'text' must be a string")
             if chat_id is None:
                 raise ValueError("'chat_id' is required")
-            self._api("sendMessage", {"chat_id": str(chat_id), "text": text})
+            self._api_retrying("sendMessage", {"chat_id": str(chat_id), "text": text})
             return ActionResult(contents=text)
         if method_name == LISTEN_METHOD:
             while True:
@@ -65,7 +67,7 @@ class TelegramAction(Action):
                         "getUpdates",
                         {"timeout": POLL_SECONDS, "offset": self._offset, "allowed_updates": ["message"]},
                     )
-                except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
+                except TRANSIENT_ERRORS as e:
                     # Transport lifecycle, not a system failure: idle long-poll
                     # connections get reset routinely (NAT timeouts, wifi
                     # transitions). Reconnect after a pause. Everything else —
@@ -81,7 +83,7 @@ class TelegramAction(Action):
                         # via the next call's offset. Without this, the final
                         # message before shutdown (e.g. "quit") is redelivered
                         # to the next process.
-                        self._api("getUpdates", {"offset": self._offset, "timeout": 0, "limit": 1})
+                        self._api_retrying("getUpdates", {"offset": self._offset, "timeout": 0, "limit": 1})
                         return result
         raise ValueError(f"Unknown method: {method_name!r}")
 
@@ -122,6 +124,20 @@ class TelegramAction(Action):
             if entry == str(chat_id) or (username and entry.lstrip("@") == username):
                 return True
         return False
+
+    def _api_retrying(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """One-shot API calls (send, ack) retried through transient connection
+        errors — same transport-lifecycle class as the poll reconnect. Crashes
+        after API_ATTEMPTS; API-level errors (ok: false) never retry."""
+        for attempt in range(API_ATTEMPTS):
+            try:
+                return self._api(method, params)
+            except TRANSIENT_ERRORS as e:
+                if attempt == API_ATTEMPTS - 1:
+                    raise
+                log.warning(f"telegram_api_retry method={method} attempt={attempt + 1} error={e!r}")
+                time.sleep(RECONNECT_SECONDS)
+        raise RuntimeError("unreachable")  # for the type checker
 
     def _api(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         url = f"https://api.telegram.org/bot{self.config.token}/{method}"

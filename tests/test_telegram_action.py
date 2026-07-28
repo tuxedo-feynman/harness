@@ -115,6 +115,31 @@ def test_listen_reconnects_after_transient_connection_errors():
     assert api.call_count == 3
 
 
+def test_send_retries_transient_errors_then_crashes():
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+
+    # one reset, then success — the send survives
+    with (
+        patch.object(TelegramAction, "_api",
+                     side_effect=[urllib.error.URLError("reset"), {"ok": True}]) as api,
+        patch("actions.telegram_action.time.sleep") as sleep,
+    ):
+        result = action.run("send", {"text": "hi", "chat_id": "42"}, context)
+    assert result.contents == "hi"
+    assert api.call_count == 2
+    sleep.assert_called_once_with(5)
+
+    # persistent failure — crashes after the attempt budget
+    with (
+        patch.object(TelegramAction, "_api", side_effect=urllib.error.URLError("down")) as api,
+        patch("actions.telegram_action.time.sleep"),
+    ):
+        with pytest.raises(urllib.error.URLError):
+            action.run("send", {"text": "hi", "chat_id": "42"}, context)
+    assert api.call_count == 3
+
+
 def test_send_posts_the_message():
     action = TelegramAction(TelegramActionConfig(token="t"))
     context = Context(system_prompt="", history=[], available_actions={})
