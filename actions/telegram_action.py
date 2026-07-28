@@ -103,18 +103,14 @@ class TelegramAction(Action):
                 f"telegram_message_ignored chat_id={chat_id} username={username or '?'} reason=not_in_chat_ids"
             )
             return None
-        metadata = {"chat_id": str(chat_id), "username": username}
-        text = message.get("text")
+        # The full message object is the event — record all of it. Rendering
+        # for the model happens in the thinking adapters; policy's schema
+        # filter keeps it out of send parameters.
+        metadata = {"chat_id": str(chat_id), "username": username, "message": message}
+        text = message.get("text") or message.get("caption")
         if not isinstance(text, str):
-            kinds = [
-                k
-                for k in ("voice", "audio", "photo", "video", "video_note",
-                          "document", "sticker", "location", "contact")
-                if k in message
-            ]
             log.warning(
-                f"telegram_message_unsupported chat_id={chat_id}"
-                f" types={kinds or sorted(message.keys())}"
+                f"telegram_message_unsupported chat_id={chat_id} keys={sorted(message.keys())}"
             )
             return ActionResult(contents="", metadata=metadata)
         log.info(f"telegram_message_accepted chat_id={chat_id} username={username or '?'}")

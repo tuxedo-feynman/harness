@@ -1,6 +1,6 @@
 from typing import Any
 
-from harness.action import LISTEN_METHOD, THINKING_METHOD, Action
+from harness.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, Action
 from harness.config import ClaudeActionConfig
 from harness.models import ActionDescription, ActionResult, Context
 
@@ -78,11 +78,14 @@ class ClaudeThinkingAction(Action):
         messages carry only the conversation."""
         messages: list[dict] = []
         proposal_ids: set[str] = set()
+        last_assistant_text = ""
         for operand in context.history:
             for request, result in zip(operand.action_requests, operand.action_results):
                 kind = self._kind_of(context, request.action_name)
                 if request.method_name == LISTEN_METHOD:
-                    messages.append({"role": "user", "content": result.contents})
+                    messages.append(
+                        {"role": "user", "content": result.contents or self._render_empty(result)}
+                    )
                 elif kind == "thinking":
                     # Thinking blocks must be echoed back unchanged on
                     # multi-turn tool use; they ride in result metadata.
@@ -101,6 +104,7 @@ class ClaudeThinkingAction(Action):
                         proposal_ids.add(ad.id)
                     if blocks:
                         messages.append({"role": "assistant", "content": blocks})
+                        last_assistant_text = result.contents
                 elif kind == "effect" and request.id in proposal_ids:
                     messages.append(
                         {
@@ -114,8 +118,14 @@ class ClaudeThinkingAction(Action):
                             ],
                         }
                     )
-                # Anything else (null, policy-synthesized sends) isn't part of
-                # the model-facing conversation.
+                elif request.method_name == SEND_METHOD and result.contents != last_assistant_text:
+                    # A policy-authored send (e.g. a canned reply) is something
+                    # the user heard from "the assistant" — the model must see
+                    # it too. Deliveries relaying the thinking result's own
+                    # text are the utterance already emitted, so they're skipped.
+                    messages.append({"role": "assistant", "content": result.contents})
+                    last_assistant_text = result.contents
+                # Anything else (null, delivery relays) isn't model-facing.
         return messages
 
     def _parse_response(self, response: Any, lookup: dict[str, tuple[str, str]]) -> ActionResult:
@@ -151,6 +161,25 @@ class ClaudeThinkingAction(Action):
             metadata={"thinking_blocks": thinking_blocks} if thinking_blocks else {},
             action_description_requests=proposals,
         )
+
+    @staticmethod
+    def _render_empty(result: ActionResult) -> str:
+        """A contentless stimulus, described from the recorded event so the
+        model knows what actually happened (voice note, photo, blank line)."""
+        message = result.metadata.get("message")
+        if isinstance(message, dict):
+            kinds = [
+                k
+                for k in ("voice", "audio", "photo", "video", "video_note",
+                          "document", "sticker", "location", "contact", "poll")
+                if k in message
+            ]
+            if kinds:
+                return (
+                    f"[the user sent a message with no text — it contains: "
+                    f"{', '.join(kinds)} — this content type isn't supported]"
+                )
+        return "[the user sent an empty message]"
 
     @staticmethod
     def _kind_of(context: Context, action_name: str) -> str | None:

@@ -25,7 +25,9 @@ def test_accept_filters_by_username_or_numeric_chat_id():
     result = action._accept(allowed)
     assert result is not None
     assert result.contents == "hello"
-    assert result.metadata == {"chat_id": "42", "username": "mrfantasticzero"}
+    assert result.metadata["chat_id"] == "42"
+    assert result.metadata["username"] == "mrfantasticzero"
+    assert result.metadata["message"]["text"] == "hello"  # the full event is recorded
     assert action._accept(intruder) is None
 
 
@@ -46,7 +48,7 @@ def test_accept_edge_cases():
     unfiltered = TelegramAction(TelegramActionConfig(token="t"))
     accepted = unfiltered._accept(_utility_get_update("hi", 7, "anyone"))
     assert accepted is not None  # empty allow-list accepts everyone
-    assert accepted.metadata == {"chat_id": "7", "username": "anyone"}
+    assert accepted.metadata["chat_id"] == "7"
 
     by_id = TelegramAction(TelegramActionConfig(token="t", chat_ids=[7]))
     assert by_id._accept(_utility_get_update("hi", 7, "anyone")) is not None
@@ -54,16 +56,24 @@ def test_accept_edge_cases():
     assert unfiltered._accept({"update_id": 1}) is None  # no chat: nowhere to reply
 
     # unsupported content from an allowed chat becomes an empty-content
-    # stimulus so Policy can reply honestly
+    # stimulus with the full message recorded, so Policy can reply honestly
+    # and the thinking adapters can describe the event
     voice = unfiltered._accept(
-        {"update_id": 2, "message": {"chat": {"id": 7, "username": "anyone"}, "voice": {}}}
+        {"update_id": 2, "message": {"chat": {"id": 7, "username": "anyone"}, "voice": {"duration": 3}}}
     )
     assert voice is not None
     assert voice.contents == ""
-    assert voice.metadata == {"chat_id": "7", "username": "anyone"}
+    assert voice.metadata["message"]["voice"] == {"duration": 3}
+
+    # a caption on media is real user text — promoted to contents
+    captioned = unfiltered._accept(
+        {"update_id": 3, "message": {"chat": {"id": 7}, "photo": [{}], "caption": "look at this"}}
+    )
+    assert captioned is not None
+    assert captioned.contents == "look at this"
 
     # but unsupported content from a non-allowed chat is still dropped
-    assert by_id._accept({"update_id": 3, "message": {"chat": {"id": 99}, "voice": {}}}) is None
+    assert by_id._accept({"update_id": 4, "message": {"chat": {"id": 99}, "voice": {}}}) is None
 
 
 def test_listen_skips_filtered_updates_within_one_poll():

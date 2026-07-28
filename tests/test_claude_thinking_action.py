@@ -69,9 +69,18 @@ def test_to_claude_messages_reconstructs_a_full_turn():
         action_requests=[proposal],  # same ActionDescription: id pairs the tool result
         action_results=[ActionResult(contents="hi")],
     )
-    # a policy-synthesized delivery (never proposed by the model) is not model-facing
-    synthesized = builder.add_operand(
+    # a delivery relaying the thinking result's own text is already emitted — skipped
+    relay = builder.add_operand(
         parent=effect,
+        action_requests=[
+            ActionDescription(id="relay", action_name="terminal", method_name="send",
+                              method_parameters={"text": "thinking aloud"})
+        ],
+        action_results=[ActionResult(contents="thinking aloud")],
+    )
+    # a policy-AUTHORED send (e.g. a canned reply) is a new assistant utterance
+    synthesized = builder.add_operand(
+        parent=relay,
         action_requests=[
             ActionDescription(id="synth", action_name="terminal", method_name="send",
                               method_parameters={"text": "bye"})
@@ -100,6 +109,7 @@ def test_to_claude_messages_reconstructs_a_full_turn():
             "role": "user",
             "content": [{"type": "tool_result", "tool_use_id": "toolu_9", "content": "hi"}],
         },
+        {"role": "assistant", "content": "bye"},
     ]
 
 
@@ -142,6 +152,16 @@ def test_parse_response_raises_on_refusal_and_unknown_tools():
     )
     with pytest.raises(ValueError, match="unknown tool"):
         action._parse_response(hallucinated, {})
+
+
+def test_render_empty_describes_the_recorded_event():
+    voice = ActionResult(contents="", metadata={"message": {"voice": {"duration": 3}}})
+    rendered = ClaudeThinkingAction._render_empty(voice)
+    assert "voice" in rendered
+    assert "isn't supported" in rendered
+
+    blank = ActionResult(contents="")
+    assert ClaudeThinkingAction._render_empty(blank) == "[the user sent an empty message]"
 
 
 def test_run_rejects_unknown_methods():
