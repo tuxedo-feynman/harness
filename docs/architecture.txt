@@ -50,7 +50,7 @@ Context Builder:
 - build(anchor) renders the context as seen from an operand: history is the ancestor path root->anchor, so pending listeners and dead branches are excluded automatically. available_actions is a read-only projection of Action.methods per registered Action -- never the ActionDirectory itself, so Actions can't call other Actions directly and bypass Policy Controller.
 
 
-Harness Execution Unit: // NOT NEEDED FOR MVP
+hyh Execution Unit: // NOT NEEDED FOR MVP
 - internal data model for each execution loop
   {
       id: uuid
@@ -86,7 +86,7 @@ Action:
     parameters_schema: dict[str, Any]
   )
 
-- Canonical method names are the harness's verb vocabulary -- the name IS the marker, there are no flags. Channel actions expose "listen" (wait for the world; parks as a pending listener operand) and "send" (tell the world); thinking actions expose "complete". Each action translates the verb into its underlying call (input(), getUpdates, chat.completions.create, ...). At most one listen method per action holds by construction.
+- Canonical method names are hyh's verb vocabulary -- the name IS the marker, there are no flags. Channel actions expose "listen" (wait for the world; parks as a pending listener operand) and "send" (tell the world); thinking actions expose "complete". Each action translates the verb into its underlying call (input(), getUpdates, chat.completions.create, ...). At most one listen method per action holds by construction.
 )
 
 

@@ -1,15 +1,15 @@
 import sys
 
-from harness.action import LISTEN_METHOD
-from harness.action_directory import ActionDirectory
-from harness.cli import parse_args
-from harness.config import build_actions, load_config
-from harness.context import ContextBuilder
-from harness.dispatcher import Dispatcher
-from harness.logger import new_id, setup_logging
-from harness.loop import ExecutionLoop
-from harness.models import ActionDescription, ActionResult
-from harness.policy import PolicyController
+from hyh.action import LISTEN_METHOD
+from hyh.action_directory import ActionDirectory
+from hyh.cli import parse_args
+from hyh.config import build_actions, load_config
+from hyh.context import ContextBuilder
+from hyh.dispatcher import Dispatcher
+from hyh.logger import new_id, setup_logging
+from hyh.loop import ExecutionLoop
+from hyh.models import ActionDescription, ActionResult
+from hyh.policy import PolicyController
 
 
 def main(argv=None) -> None:
@@ -45,7 +45,7 @@ def main(argv=None) -> None:
         )
         loop.run(stimulus)
     else:
-        print('Usage: python -m harness.main "Your message"', file=sys.stderr)
+        print('Usage: python -m hyh.main "Your message"', file=sys.stderr)
         sys.exit(1)
 
 

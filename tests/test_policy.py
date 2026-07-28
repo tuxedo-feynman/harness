@@ -5,11 +5,11 @@ from actions.fake_thinking_action import FakeThinkingAction
 from actions.null_action import NullAction
 from actions.telegram_action import TelegramAction
 from actions.terminal_action import TerminalAction
-from harness.action_directory import ActionDirectory
-from harness.config import TelegramActionConfig
-from harness.context import ContextBuilder
-from harness.models import ActionDescription, ActionResult, Context, Operand
-from harness.policy import PolicyController
+from hyh.action_directory import ActionDirectory
+from hyh.config import TelegramActionConfig
+from hyh.context import ContextBuilder
+from hyh.models import ActionDescription, ActionResult, Context, Operand
+from hyh.policy import PolicyController
 
 
 def _utility_get_directory() -> ActionDirectory:

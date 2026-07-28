@@ -1,7 +1,7 @@
 import pytest
 
 from actions.telegram_action import TelegramAction
-from harness.config import Config, build_actions, load_config
+from hyh.config import Config, build_actions, load_config
 
 
 def test_load_config():

@@ -13,7 +13,7 @@ actions:
   #   model: claude-opus-5
   #   max_tokens: 16000
   # telegram:           # Telegram bot channel (listens alongside terminal in --chat)
-  #   token: "123456:your-bot-token"
+  #   token: "123456:your-bot-token"   # optional: omit to resolve from TELEGRAM_BOT_TOKEN
   #   chat_ids:            # allow-list: numeric chat ids or "@username" entries.
   #     - "@your-username" #   usernames match incoming messages; only numeric ids
   #     - 123456789        #   can be send targets. Empty/omitted = accept all.
@@ -22,10 +22,10 @@ actions:
 default_thinking_action: fake
 
 system_prompt: |
-  You are a local development assistant.
+  You are Malkmus, a local development assistant.
   Be concise.
   Use actions only when necessary.
 
 logging:
-  env: dev              # dev logs to /tmp/harness.log unless log_file is set
-  # log_file: /path/to/harness.log      # required when env: production
+  env: dev              # dev logs to /tmp/hyh.log unless log_file is set
+  # log_file: /path/to/hyh.log      # required when env: production

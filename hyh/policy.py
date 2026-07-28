@@ -1,10 +1,10 @@
 import logging
 
-from harness.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD
-from harness.action_directory import ActionDirectory
-from harness.context import ContextBuilder
-from harness.logger import new_id
-from harness.models import ActionDescription, ActionResult, Context, Operand
+from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD
+from hyh.action_directory import ActionDirectory
+from hyh.context import ContextBuilder
+from hyh.logger import new_id
+from hyh.models import ActionDescription, ActionResult, Context, Operand
 
 log = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime, timezone
 
-from harness.action_directory import ActionDirectory
-from harness.logger import new_id
-from harness.models import ActionDescription, ActionResult, Context, Operand
+from hyh.action_directory import ActionDirectory
+from hyh.logger import new_id
+from hyh.models import ActionDescription, ActionResult, Context, Operand
 
 log = logging.getLogger(__name__)
 

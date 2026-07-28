@@ -5,9 +5,9 @@ import pytest
 from actions.fake_thinking_action import FakeThinkingAction
 from actions.null_action import NullAction
 from actions.terminal_action import TerminalAction
-from harness.action_directory import ActionDirectory
-from harness.context import ContextBuilder
-from harness.models import ActionDescription
+from hyh.action_directory import ActionDirectory
+from hyh.context import ContextBuilder
+from hyh.models import ActionDescription
 
 
 def _utility_get_builder() -> ContextBuilder:

@@ -1,15 +1,16 @@
 import json
 import logging
+import os
 import time
 import urllib.error
 import urllib.request
 from typing import Any
 
-from harness.action import LISTEN_METHOD, SEND_METHOD, Action
-from harness.config import TelegramActionConfig
-from harness.models import ActionResult, Context
+from hyh.action import LISTEN_METHOD, SEND_METHOD, Action
+from hyh.config import TelegramActionConfig
+from hyh.models import ActionResult, Context
 
-log = logging.getLogger("harness." + __name__)
+log = logging.getLogger("hyh." + __name__)
 
 POLL_SECONDS = 50
 RECONNECT_SECONDS = 5
@@ -48,6 +49,11 @@ class TelegramAction(Action):
 
     def __init__(self, config: TelegramActionConfig):
         self.config = config
+        self._token = config.token or os.environ.get("TELEGRAM_BOT_TOKEN")
+        if not self._token:
+            raise ValueError(
+                "telegram token missing: set token in config or TELEGRAM_BOT_TOKEN in the environment"
+            )
         self._offset = 0
 
     def run(self, method_name: str, arguments: dict[str, Any], context: Context) -> ActionResult:
@@ -140,7 +146,7 @@ class TelegramAction(Action):
         raise RuntimeError("unreachable")  # for the type checker
 
     def _api(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        url = f"https://api.telegram.org/bot{self.config.token}/{method}"
+        url = f"https://api.telegram.org/bot{self._token}/{method}"
         request = urllib.request.Request(
             url,
             data=json.dumps(params).encode(),

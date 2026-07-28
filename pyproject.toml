@@ -3,7 +3,7 @@ requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llm-harness"
+name = "hyh"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,7 +27,7 @@ runner = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["harness*", "actions*"]
+include = ["hyh*", "actions*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

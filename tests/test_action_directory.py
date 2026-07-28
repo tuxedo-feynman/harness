@@ -3,8 +3,8 @@ from unittest.mock import Mock
 import pytest
 
 from actions.null_action import NullAction
-from harness.action import Action
-from harness.action_directory import ActionDirectory
+from hyh.action import Action
+from hyh.action_directory import ActionDirectory
 
 
 def _utility_get_mock_action(name, kind, methods) -> Action:

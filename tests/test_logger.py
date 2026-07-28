@@ -1,7 +1,7 @@
 import pytest
 
-from harness.config import LoggingConfig
-from harness.logger import new_id, setup_logging
+from hyh.config import LoggingConfig
+from hyh.logger import new_id, setup_logging
 
 
 def test_new_id():
@@ -15,6 +15,6 @@ def test_setup_logging(tmp_path):
     with pytest.raises(ValueError, match="log_file must be set"):
         setup_logging(LoggingConfig(env="production"))
 
-    log_file = tmp_path / "nested" / "harness.log"
+    log_file = tmp_path / "nested" / "hyh.log"
     setup_logging(LoggingConfig(env="production", log_file=str(log_file)))
     assert log_file.parent.exists()  # parent directories are created

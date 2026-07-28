@@ -6,9 +6,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from harness.models import ActionKind, ActionResult, Context
+from hyh.models import ActionKind, ActionResult, Context
 
-# Canonical method names — the harness's verb vocabulary. The name IS the
+# Canonical method names — hyh's verb vocabulary. The name IS the
 # marker; there are no flags. Channel actions expose "listen" (wait for the
 # world; parks as a pending listener operand) and "send" (tell the world).
 # Thinking actions expose "complete". Each action translates the verb into its
@@ -19,7 +19,7 @@ THINKING_METHOD = "complete"
 
 
 class Action(ABC):
-    """Base class for everything the harness can execute: terminal, telegram,
+    """Base class for everything hyh can execute: terminal, telegram,
     ChatGPT, null, etc. Subclasses set the class attributes and implement run().
     """
 

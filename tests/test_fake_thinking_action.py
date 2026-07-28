@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from unittest.mock import Mock
 
 from actions.fake_thinking_action import FakeThinkingAction
-from harness.models import ActionDescription, ActionResult, Context, Operand
+from hyh.models import ActionDescription, ActionResult, Context, Operand
 
 
 def test_returns_programmed_responses_in_order():

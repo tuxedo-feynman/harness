@@ -6,10 +6,10 @@ from actions.claude_thinking_action import ClaudeThinkingAction
 from actions.fake_thinking_action import FakeThinkingAction
 from actions.null_action import NullAction
 from actions.terminal_action import TerminalAction
-from harness.action_directory import ActionDirectory
-from harness.config import ClaudeActionConfig
-from harness.context import ContextBuilder
-from harness.models import ActionDescription, ActionResult, Context
+from hyh.action_directory import ActionDirectory
+from hyh.config import ClaudeActionConfig
+from hyh.context import ContextBuilder
+from hyh.models import ActionDescription, ActionResult, Context
 
 
 def _utility_get_builder() -> ContextBuilder:

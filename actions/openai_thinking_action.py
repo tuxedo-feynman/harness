@@ -2,9 +2,9 @@ import json
 import os
 from typing import Any
 
-from harness.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, Action
-from harness.config import ThinkingActionConfig
-from harness.models import ActionDescription, ActionResult, Context
+from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, Action
+from hyh.config import ThinkingActionConfig
+from hyh.models import ActionDescription, ActionResult, Context
 
 
 class OpenAIThinkingAction(Action):

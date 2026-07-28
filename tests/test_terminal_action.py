@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from actions.terminal_action import TerminalAction
-from harness.models import Context
+from hyh.models import Context
 
 
 def test_send_writes_to_stdout_and_returns_text(capsys):

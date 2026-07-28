@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
-    from harness.action import Action
+    from hyh.action import Action
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a local development assistant.\n"
+    "You are Malkmus, a local development assistant.\n"
     "Be concise.\n"
     "Use actions only when necessary."
 )
@@ -31,7 +31,7 @@ class ClaudeActionConfig:
 
 @dataclass
 class TelegramActionConfig:
-    token: str
+    token: str | None = None  # unset = resolve from the environment (TELEGRAM_BOT_TOKEN)
     # Allow-list of chats: numeric chat ids or "@username" entries. Both match
     # incoming messages; only numeric ids can be send targets. Empty = accept all.
     chat_ids: list[str | int] = field(default_factory=list)

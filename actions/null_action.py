@@ -1,7 +1,7 @@
 from typing import Any
 
-from harness.action import Action
-from harness.models import ActionResult, Context
+from hyh.action import Action
+from hyh.models import ActionResult, Context
 
 
 class NullAction(Action):

@@ -1,7 +1,7 @@
 from typing import Any
 
-from harness.action import LISTEN_METHOD, SEND_METHOD, Action
-from harness.models import ActionResult, Context
+from hyh.action import LISTEN_METHOD, SEND_METHOD, Action
+from hyh.models import ActionResult, Context
 
 
 class TerminalAction(Action):

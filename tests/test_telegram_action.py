@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from actions.telegram_action import TelegramAction
-from harness.config import TelegramActionConfig
-from harness.models import Context
+from hyh.config import TelegramActionConfig
+from hyh.models import Context
 
 
 def _utility_get_update(text: str, chat_id: int, username: str, update_id: int = 1) -> dict:
@@ -29,6 +29,16 @@ def test_accept_filters_by_username_or_numeric_chat_id():
     assert result.metadata["username"] == "mrfantasticzero"
     assert result.metadata["message"]["text"] == "hello"  # the full event is recorded
     assert action._accept(intruder) is None
+
+
+def test_token_resolves_from_the_environment_or_fails_fast():
+    with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "env-token"}):
+        action = TelegramAction(TelegramActionConfig(token=None))
+    assert action._token == "env-token"
+
+    with patch.dict("os.environ", {}, clear=True):
+        with pytest.raises(ValueError, match="telegram token missing"):
+            TelegramAction(TelegramActionConfig(token=None))
 
 
 def test_listen_returns_message_from_a_mocked_api():

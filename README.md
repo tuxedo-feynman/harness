@@ -1,10 +1,10 @@
-# harness
+# hyh
 
 A bare-bones local LLM harness built around a single abstraction: the **Action**.
 
 User input, LLM calls, tool execution, and printing a response are all Actions.
 The **Operator** (execution loop + policy controller) receives Action results,
-builds context, and decides what runs next — the harness, not the model, is in
+builds context, and decides what runs next — hyh, not the model, is in
 control. See `docs/architecture.txt` for the design.
 
 - **Thinking Actions** — AI APIs that make decisions given context (OpenAI, llama-server, a fake for tests)
@@ -28,26 +28,26 @@ pip install -e ".[dev]"
 cp config.example.yaml config.yaml
 ```
 
-The default config uses the fake thinking action, so the harness runs without any model server.
+The default config uses the fake thinking action, so hyh runs without any model server.
 
 ## Usage
 
 Single-shot:
 
 ```bash
-python -m harness.main "Say hello"
+python -m hyh.main "Say hello"
 ```
 
 Interactive chat (history carries across turns for the life of the process — nothing is persisted):
 
 ```bash
-python -m harness.main --chat
+python -m hyh.main --chat
 ```
 
 Custom config path:
 
 ```bash
-python -m harness.main --config path/to/config.yaml "Hello"
+python -m hyh.main --config path/to/config.yaml "Hello"
 ```
 
 ## Actions
@@ -108,10 +108,10 @@ Requires the optional dependency: `pip install -e ".[openai]"`.
 ## Logging
 
 Structured logfmt lines (`key=value`) via Python logging. In dev, logs go to
-`/tmp/harness.log`:
+`/tmp/hyh.log`:
 
 ```bash
-tail -f /tmp/harness.log
+tail -f /tmp/hyh.log
 ```
 
 Policy decisions, action executions, and operand creation are all logged.
@@ -127,5 +127,5 @@ No network or API key required — the suite uses the fake thinking action throu
 Optional coverage report:
 
 ```bash
-pytest --cov=harness --cov=actions
+pytest --cov=hyh --cov=actions
 ```

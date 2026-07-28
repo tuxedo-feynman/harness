@@ -3,12 +3,12 @@ from unittest.mock import ANY, Mock
 from actions.fake_thinking_action import FakeThinkingAction
 from actions.null_action import NullAction
 from actions.terminal_action import TerminalAction
-from harness.action import Action
-from harness.action_directory import ActionDirectory
-from harness.context import ContextBuilder
-from harness.loop import ExecutionLoop
-from harness.models import ActionDescription, ActionResult
-from harness.policy import PolicyController
+from hyh.action import Action
+from hyh.action_directory import ActionDirectory
+from hyh.context import ContextBuilder
+from hyh.loop import ExecutionLoop
+from hyh.models import ActionDescription, ActionResult
+from hyh.policy import PolicyController
 
 
 def _utility_get_stimulus(builder: ContextBuilder, action_name: str, contents: str):

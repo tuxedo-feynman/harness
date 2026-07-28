@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from harness.action import Action
+    from hyh.action import Action
 
 ActionKind = Literal["thinking", "effect", "null"]
 

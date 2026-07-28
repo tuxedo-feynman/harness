@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 from actions.null_action import NullAction
-from harness.models import Context
+from hyh.models import Context
 
 
 def test_run():

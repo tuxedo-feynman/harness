@@ -1,5 +1,5 @@
-from harness.action import Action
-from harness.models import AvailableAction
+from hyh.action import Action
+from hyh.models import AvailableAction
 
 
 class ActionDirectory:

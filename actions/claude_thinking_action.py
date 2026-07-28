@@ -1,8 +1,8 @@
 from typing import Any
 
-from harness.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, Action
-from harness.config import ClaudeActionConfig
-from harness.models import ActionDescription, ActionResult, Context
+from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, Action
+from hyh.config import ClaudeActionConfig
+from hyh.models import ActionDescription, ActionResult, Context
 
 
 class ClaudeThinkingAction(Action):
