@@ -174,15 +174,30 @@ def summary_table(samples):
     return lines
 
 
-def timeline_table(samples, count=10):
-    n = len(samples)
-    indices = sorted({round(i * (n - 1) / (count - 1)) for i in range(count)}) if n > count else range(n)
-    lines = ["| Elapsed (s) | RSS (MB) | CPU % | Threads |", "| --- | --- | --- | --- |"]
-    for i in indices:
-        s = samples[i]
-        lines.append(
-            f"| {s['elapsed']:.1f} | {s['rss_bytes'] / 2**20:.1f} | {s['cpu_percent']:.1f} | {s['threads']} |"
-        )
+def timeline_chart(samples, height=8, width=60):
+    """Block chart of process RSS over the run, one column per time bucket.
+    Fenced as a code block so it renders monospaced in any markdown viewer."""
+    points = [(s["elapsed"], s["rss_bytes"] / 2**20) for s in samples]
+    if len(points) > width:
+        last = len(points) - 1
+        points = [points[round(i * last / (width - 1))] for i in range(width)]
+    values = [v for _, v in points]
+    lo, hi = min(values), max(values)
+    span = hi - lo
+    levels = [round((v - lo) / span * (height - 1)) if span else 0 for v in values]
+    lines = ["```"]
+    for row in range(height - 1, -1, -1):
+        if row == height - 1:
+            label = f"{hi:8.1f} |"
+        elif row == 0:
+            label = f"{lo:8.1f} |"
+        else:
+            label = " " * 9 + "|"
+        lines.append(label + "".join("█" if level >= row else " " for level in levels))
+    lines.append(" " * 9 + "+" + "-" * len(levels))
+    end = f"{points[-1][0]:.0f}s"
+    lines.append(" " * 10 + "0s" + end.rjust(max(len(levels) - 2, len(end))))
+    lines.append("```")
     return lines
 
 
@@ -211,10 +226,10 @@ def write_report(path, command, started, ended, exit_code, interval, samples):
             f"- Bytes received: {human_bytes(recv)}",
             "- Caveat: network counters are host-wide, not scoped to the monitored process.",
             "",
-            "## Timeline",
+            "## Timeline — process RSS (MB)",
             "",
         ]
-        lines += timeline_table(samples)
+        lines += timeline_chart(samples)
     else:
         lines += ["No samples collected (child exited before it could be sampled).", ""]
     lines += [
