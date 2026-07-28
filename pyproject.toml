@@ -21,6 +21,9 @@ openai = [
 claude = [
     "anthropic",
 ]
+runner = [
+    "psutil",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

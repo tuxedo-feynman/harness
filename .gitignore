@@ -9,6 +9,7 @@ build/
 # Runtime data (session logs, workspace files)
 data/
 workspace/
+reports/
 
 # Config with real secrets (copy from config.example.yaml)
 config.yaml
