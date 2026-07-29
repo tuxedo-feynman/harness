@@ -161,7 +161,48 @@ def test_send_posts_the_message():
     assert result.contents == "hi"
 
 
-def test_run_rejects_bad_arguments_and_unknown_methods():
+def test_send_splits_long_text_into_consecutive_messages():
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+    text = "a" * 4096 + "b" * 4096 + "c"
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        result = action.run("send", {"text": text, "chat_id": "42"}, context)
+
+    assert result.contents == text
+    assert api.call_count == 3
+    sent = [call.args[1]["text"] for call in api.call_args_list]
+    assert sent == ["a" * 4096, "b" * 4096, "c"]
+
+
+def test_api_crashes_on_client_errors_and_retries_server_errors():
+    import email.message
+    import io
+
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+
+    def _utility_get_http_error(code: int, description: str) -> urllib.error.HTTPError:
+        body = ('{"ok": false, "description": "%s"}' % description).encode()
+        return urllib.error.HTTPError("url", code, "boom", email.message.Message(), io.BytesIO(body))
+
+    # 4xx is permanent: no retries, and the response body names the cause
+    with patch("urllib.request.urlopen", side_effect=_utility_get_http_error(400, "message is too long")):
+        with pytest.raises(RuntimeError, match="HTTP 400.*message is too long"):
+            action.run("send", {"text": "hi", "chat_id": "42"}, context)
+
+    # 5xx stays in the transient class: retried, then succeeds
+    ok = MagicMock()
+    ok.__enter__.return_value.read.return_value = b'{"ok": true}'
+    with (
+        patch(
+            "urllib.request.urlopen",
+            side_effect=[_utility_get_http_error(502, "bad gateway"), ok],
+        ),
+        patch("actions.telegram_action.time.sleep"),
+    ):
+        result = action.run("send", {"text": "hi", "chat_id": "42"}, context)
+    assert result.contents == "hi"
     action = TelegramAction(TelegramActionConfig(token="t"))
     context = Context(system_prompt="", history=[], available_actions={})
     with pytest.raises(ValueError, match="'text' must be a string"):

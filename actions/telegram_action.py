@@ -16,6 +16,7 @@ POLL_SECONDS = 50
 RECONNECT_SECONDS = 5
 TRANSIENT_ERRORS = (urllib.error.URLError, ConnectionError, TimeoutError)
 API_ATTEMPTS = 3
+MESSAGE_LIMIT = 4096  # Telegram rejects longer sendMessage texts with a 400
 
 
 class TelegramAction(Action):
@@ -31,7 +32,10 @@ class TelegramAction(Action):
     methods = {
         SEND_METHOD: Action.MethodDescription(
             name=SEND_METHOD,
-            description="Send a text message to a Telegram chat.",
+            description=(
+                "Send a text message to a Telegram chat. Text longer than "
+                "4096 characters is split into consecutive messages."
+            ),
             parameters_schema={
                 "type": "object",
                 "properties": {
@@ -64,7 +68,11 @@ class TelegramAction(Action):
                 raise ValueError("'text' must be a string")
             if chat_id is None:
                 raise ValueError("'chat_id' is required")
-            self._api_retrying("sendMessage", {"chat_id": str(chat_id), "text": text})
+            for start in range(0, len(text), MESSAGE_LIMIT):
+                self._api_retrying(
+                    "sendMessage",
+                    {"chat_id": str(chat_id), "text": text[start : start + MESSAGE_LIMIT]},
+                )
             return ActionResult(contents=text)
         if method_name == LISTEN_METHOD:
             while True:
@@ -152,8 +160,17 @@ class TelegramAction(Action):
             data=json.dumps(params).encode(),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=POLL_SECONDS + 10) as response:
-            payload = json.loads(response.read())
+        try:
+            with urllib.request.urlopen(request, timeout=POLL_SECONDS + 10) as response:
+                payload = json.loads(response.read())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code >= 500:
+                # Server-side hiccup: HTTPError is a URLError, so re-raising
+                # keeps it in the transient class (poll reconnect, send retry).
+                log.warning(f"telegram_http_error method={method} code={e.code} body={body}")
+                raise
+            raise RuntimeError(f"Telegram API {method} HTTP {e.code}: {body}") from e
         if not payload.get("ok"):
             raise RuntimeError(f"Telegram API {method} failed: {payload}")
         return payload
