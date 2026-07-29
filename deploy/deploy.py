@@ -110,7 +110,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 
     env_flag = "--env-file ~/.hyh/env " if env_uploaded else ""
     print(f"deployed {IMAGE} to {target} ({platform}). Run it there with:")
-    print(f"  docker run -d {env_flag}--name hyh hyh:latest")
+    print(f"  docker run -d {env_flag}-v ~/hyh-reports:/app/reports --name hyh hyh:latest")
     print("No --restart policy on purpose: keeping it always-on is the target machine's concern.")
 
 

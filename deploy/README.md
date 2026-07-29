@@ -10,7 +10,10 @@ Docker-based deploy tooling for hyh. Stdlib only, fail fast.
 
 `deploy` prints the run command instead of executing it:
 
-    docker run -d --env-file ~/.hyh/env --name hyh hyh:latest
+    docker run -d --env-file ~/.hyh/env -v ~/hyh-reports:/app/reports --name hyh hyh:latest
+
+The runner supervises hyh inside the container and writes a crash-forensics
+report to the mounted `~/hyh-reports` when the process exits.
 
 Deliberately no `--restart` policy: the process stays fragile, and keeping it
 always-on is the target machine's concern.
