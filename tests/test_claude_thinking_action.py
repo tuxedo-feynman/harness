@@ -34,11 +34,10 @@ def test_build_tools_advertises_effect_methods_only():
     tools, lookup = action._build_tools(builder.build(builder.add_root()))
 
     names = {tool["name"] for tool in tools}
-    assert names == {"terminal_send", "terminal_listen"}  # fake and null excluded
-    assert lookup == {
-        "terminal_send": ("terminal", "send"),
-        "terminal_listen": ("terminal", "listen"),
-    }
+    # fake and null excluded; listen and typing are the harness's verbs,
+    # never proposable by the model
+    assert names == {"terminal_send"}
+    assert lookup == {"terminal_send": ("terminal", "send")}
     assert all("input_schema" in tool for tool in tools)  # anthropic schema shape
 
 
@@ -111,6 +110,17 @@ def test_to_claude_messages_reconstructs_a_full_turn():
         },
         {"role": "assistant", "content": "bye"},
     ]
+
+
+def test_render_stimulus_carries_the_message_id():
+    with_id = ActionResult(
+        contents="hello",
+        metadata={"chat_id": "42", "message": {"message_id": 7, "text": "hello"}},
+    )
+    assert ClaudeThinkingAction._render_stimulus(with_id) == "[message_id=7] hello"
+
+    # terminal input has no message metadata — rendered untouched
+    assert ClaudeThinkingAction._render_stimulus(ActionResult(contents="hi")) == "hi"
 
 
 def test_to_claude_messages_marks_error_results():

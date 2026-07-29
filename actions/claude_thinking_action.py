@@ -1,6 +1,6 @@
 from typing import Any
 
-from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, Action
+from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, TYPING_METHOD, Action
 from hyh.config import ClaudeActionConfig
 from hyh.models import ActionDescription, ActionResult, Context
 
@@ -61,6 +61,10 @@ class ClaudeThinkingAction(Action):
             if available.kind != "effect":
                 continue
             for method in available.methods.values():
+                if method.name in (LISTEN_METHOD, TYPING_METHOD):
+                    # The harness's verbs: Policy arms listeners and fires
+                    # typing — the model proposing either bypasses Policy.
+                    continue
                 flat_name = f"{action_name}_{method.name}"
                 lookup[flat_name] = (action_name, method.name)
                 tools.append(
@@ -84,7 +88,7 @@ class ClaudeThinkingAction(Action):
                 kind = self._kind_of(context, request.action_name)
                 if request.method_name == LISTEN_METHOD:
                     messages.append(
-                        {"role": "user", "content": result.contents or self._render_empty(result)}
+                        {"role": "user", "content": self._render_stimulus(result)}
                     )
                 elif kind == "thinking":
                     # Thinking blocks must be echoed back unchanged on
@@ -157,6 +161,16 @@ class ClaudeThinkingAction(Action):
             metadata={"thinking_blocks": thinking_blocks} if thinking_blocks else {},
             action_description_requests=proposals,
         )
+
+    @classmethod
+    def _render_stimulus(cls, result: ActionResult) -> str:
+        """The recorded event's message_id rides along with the text: react
+        and threaded replies need it, and the model can't see metadata."""
+        text = result.contents or cls._render_empty(result)
+        message = result.metadata.get("message")
+        if isinstance(message, dict) and "message_id" in message:
+            return f"[message_id={message['message_id']}] {text}"
+        return text
 
     @staticmethod
     def _render_empty(result: ActionResult) -> str:

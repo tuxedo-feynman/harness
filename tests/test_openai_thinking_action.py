@@ -101,11 +101,10 @@ def test_build_tools_advertises_effect_methods_only():
     tools, lookup = action._build_tools(builder.build(builder.add_root()))
 
     names = {tool["function"]["name"] for tool in tools}
-    assert names == {"terminal_send", "terminal_listen"}  # fake and null excluded
-    assert lookup == {
-        "terminal_send": ("terminal", "send"),
-        "terminal_listen": ("terminal", "listen"),
-    }
+    # fake and null excluded; listen and typing are the harness's verbs,
+    # never proposable by the model
+    assert names == {"terminal_send"}
+    assert lookup == {"terminal_send": ("terminal", "send")}
 
 
 def test_to_openai_messages_reconstructs_a_full_turn():
