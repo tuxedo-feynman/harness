@@ -18,6 +18,34 @@ TRANSIENT_ERRORS = (urllib.error.URLError, ConnectionError, TimeoutError)
 API_ATTEMPTS = 3
 MESSAGE_LIMIT = 4096  # Telegram rejects longer sendMessage texts with a 400
 
+# Split-point preference tiers: paragraph, line, sentence, word. Within a
+# tier the rightmost match in the window wins. Sentence enders are a set
+# because CJK punctuation takes no trailing space — and for spaceless
+# scripts (Chinese) the sentence tier is the only thing between a
+# paragraph and a hard mid-word cut.
+SPLIT_BOUNDARIES = (
+    ("\n\n",),
+    ("\n",),
+    (". ", "! ", "? ", "。", "！", "？", "۔ ", "। "),
+    (" ",),
+)
+
+
+def _split_message(text: str, limit: int) -> list[str]:
+    chunks = []
+    while len(text) > limit:
+        window = text[:limit]
+        cut = limit
+        for tier in SPLIT_BOUNDARIES:
+            hits = [window.rfind(sep) + len(sep) for sep in tier if window.rfind(sep) > 0]
+            if hits:
+                cut = max(hits)
+                break
+        chunks.append(text[:cut])
+        text = text[cut:]
+    chunks.append(text)
+    return chunks
+
 
 class TelegramAction(Action):
     """Telegram bot channel via the Bot API (stdlib HTTP, no dependency).
@@ -68,11 +96,8 @@ class TelegramAction(Action):
                 raise ValueError("'text' must be a string")
             if chat_id is None:
                 raise ValueError("'chat_id' is required")
-            for start in range(0, len(text), MESSAGE_LIMIT):
-                self._api_retrying(
-                    "sendMessage",
-                    {"chat_id": str(chat_id), "text": text[start : start + MESSAGE_LIMIT]},
-                )
+            for chunk in _split_message(text, MESSAGE_LIMIT):
+                self._api_retrying("sendMessage", {"chat_id": str(chat_id), "text": chunk})
             return ActionResult(contents=text)
         if method_name == LISTEN_METHOD:
             while True:

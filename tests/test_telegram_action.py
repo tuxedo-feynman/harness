@@ -164,15 +164,44 @@ def test_send_posts_the_message():
 def test_send_splits_long_text_into_consecutive_messages():
     action = TelegramAction(TelegramActionConfig(token="t"))
     context = Context(system_prompt="", history=[], available_actions={})
-    text = "a" * 4096 + "b" * 4096 + "c"
+    text = "a" * 4000 + "\n\n" + "b" * 4000
 
     with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
         result = action.run("send", {"text": text, "chat_id": "42"}, context)
 
     assert result.contents == text
-    assert api.call_count == 3
     sent = [call.args[1]["text"] for call in api.call_args_list]
-    assert sent == ["a" * 4096, "b" * 4096, "c"]
+    assert sent == ["a" * 4000 + "\n\n", "b" * 4000]
+
+
+def test_split_message_prefers_readable_boundaries():
+    from actions.telegram_action import _split_message
+
+    # sentence fallback when there are no newlines
+    sentences = ("word " * 99 + "end. ") * 12  # 6000 chars of 500-char sentences
+    chunks = _split_message(sentences, 4096)
+    assert all(len(c) <= 4096 for c in chunks)
+    assert chunks[0].endswith("end. ")
+
+    # rightmost match within the sentence tier wins, across scripts
+    text = "x" * 2000 + ". " + "y" * 1000 + "！" + "z" * 3000
+    chunks = _split_message(text, 4096)
+    assert chunks[0].endswith("！")
+
+    # spaceless CJK-style text splits after 。 rather than mid-word
+    cjk = ("汉" * 500 + "。") * 12  # 6012 chars, no spaces or newlines
+    chunks = _split_message(cjk, 4096)
+    assert all(len(c) <= 4096 for c in chunks)
+    assert chunks[0].endswith("。")
+
+    # one unbroken token still hard-cuts at the limit
+    assert _split_message("a" * 5000, 4096) == ["a" * 4096, "a" * 904]
+
+    # short text passes through untouched
+    assert _split_message("hi", 4096) == ["hi"]
+
+    # the limit is a parameter, not telegram's constant
+    assert _split_message("one two three", 5) == ["one ", "two ", "three"]
 
 
 def test_api_crashes_on_client_errors_and_retries_server_errors():
