@@ -147,12 +147,18 @@ class OpenAIThinkingAction(Action):
 
     @classmethod
     def _render_stimulus(cls, result: ActionResult) -> str:
-        """The recorded event's message_id rides along with the text: react
-        and threaded replies need it, and the model can't see metadata."""
+        """The recorded event's addressing rides along with the text: react,
+        polls, and threaded replies need chat_id/message_id as parameters,
+        and the model can't see metadata."""
         text = result.contents or cls._render_empty(result)
+        tags = []
+        if "chat_id" in result.metadata:
+            tags.append(f"chat_id={result.metadata['chat_id']}")
         message = result.metadata.get("message")
         if isinstance(message, dict) and "message_id" in message:
-            return f"[message_id={message['message_id']}] {text}"
+            tags.append(f"message_id={message['message_id']}")
+        if tags:
+            return f"[{' '.join(tags)}] {text}"
         return text
 
     @staticmethod

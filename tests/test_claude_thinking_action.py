@@ -112,14 +112,20 @@ def test_to_claude_messages_reconstructs_a_full_turn():
     ]
 
 
-def test_render_stimulus_carries_the_message_id():
+def test_render_stimulus_carries_the_addressing():
     with_id = ActionResult(
         contents="hello",
         metadata={"chat_id": "42", "message": {"message_id": 7, "text": "hello"}},
     )
-    assert ClaudeThinkingAction._render_stimulus(with_id) == "[message_id=7] hello"
+    assert ClaudeThinkingAction._render_stimulus(with_id) == "[chat_id=42 message_id=7] hello"
 
-    # terminal input has no message metadata — rendered untouched
+    # a poll vote has a chat but no message
+    vote = ActionResult(contents="[poll vote: option_ids=[1]]", metadata={"chat_id": "42"})
+    assert (
+        ClaudeThinkingAction._render_stimulus(vote) == "[chat_id=42] [poll vote: option_ids=[1]]"
+    )
+
+    # terminal input has no addressing metadata — rendered untouched
     assert ClaudeThinkingAction._render_stimulus(ActionResult(contents="hi")) == "hi"
 
 
