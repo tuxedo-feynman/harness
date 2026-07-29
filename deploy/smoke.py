@@ -49,7 +49,10 @@ class Host:
 
     def wrap(self, argv):
         if self.ssh:
-            return ["ssh", self.ssh, " ".join(shlex.quote(a) for a in argv)]
+            # macOS runs non-login ssh commands without /usr/local/bin on
+            # PATH (path_helper only runs for login shells).
+            command = " ".join(shlex.quote(a) for a in argv)
+            return ["ssh", self.ssh, "PATH=/usr/local/bin:$PATH " + command]
         return argv
 
     def run(self, argv, stdin=""):

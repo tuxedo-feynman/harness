@@ -19,6 +19,10 @@ SMOKE = os.path.join(DEPLOY_DIR, "smoke.py")
 ENV_FILE = os.path.join(DEPLOY_DIR, "hyh.env")
 IMAGE = "hyh:latest"
 
+# macOS runs non-login ssh commands without /usr/local/bin on PATH
+# (path_helper only runs for login shells), so remote docker needs this.
+REMOTE_PATH = "PATH=/usr/local/bin:$PATH "
+
 ARCH_TO_PLATFORM = {
     "x86_64": "linux/amd64",
     "amd64": "linux/amd64",
@@ -68,7 +72,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     target = args.target
 
     probe = subprocess.run(
-        ["ssh", target, "docker info"], capture_output=True, text=True
+        ["ssh", target, REMOTE_PATH + "docker info"], capture_output=True, text=True
     )
     if probe.returncode != 0:
         die(
@@ -91,7 +95,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 
     print(f"+ docker save {IMAGE} | ssh {target} docker load", file=sys.stderr)
     save = subprocess.Popen(["docker", "save", IMAGE], stdout=subprocess.PIPE)
-    load = subprocess.run(["ssh", target, "docker load"], stdin=save.stdout)
+    load = subprocess.run(["ssh", target, REMOTE_PATH + "docker load"], stdin=save.stdout)
     save.stdout.close()
     if save.wait() != 0:
         die(f"docker save {IMAGE} failed")
