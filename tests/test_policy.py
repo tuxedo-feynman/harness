@@ -246,6 +246,124 @@ def test_no_origin_channel_attaches_null():
     assert evaluated.action_requests[0].action_name == "null"
 
 
+def test_thinking_attach_fires_typing_indicator_as_offpath_sibling():
+    from unittest.mock import patch
+
+    directory = _utility_get_directory()
+    builder = ContextBuilder(system_prompt="sys", action_directory=directory)
+    policy = PolicyController(directory, builder, thinking_action_name="fake")
+
+    root = builder.add_root()
+    listener = builder.add_operand(
+        parent=root,
+        action_requests=[
+            ActionDescription(id="ad-1", action_name="telegram", method_name="listen")
+        ],
+        action_results=[ActionResult(contents="hello", metadata={"chat_id": "42"})],
+    )
+    working = builder.add_operand(parent=listener)
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        evaluated = policy.evaluate(working, builder.build(working))
+
+    assert evaluated.action_requests[0].method_name == "complete"
+    api.assert_called_once_with("sendChatAction", {"chat_id": "42", "action": "typing"})
+    # the typing operand is a resolved sibling of the thinking operand,
+    # off the ancestor path: the model's context never contains it
+    sibling = builder._operands[-1]
+    assert sibling.parent == listener.id
+    assert sibling.action_requests[0].method_name == "typing"
+    assert sibling.resolved
+    assert sibling not in builder.build(working).history
+
+
+def test_canned_reply_and_terminal_channel_fire_no_typing():
+    from unittest.mock import patch
+
+    policy, directory = _utility_get_policy()
+
+    # empty input gets the canned reply — no thinking, so no typing
+    listener = _utility_get_operand(
+        "listener", None,
+        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
+        results=[ActionResult(contents="", metadata={"chat_id": "42"})],
+    )
+    working = _utility_get_operand("working", "listener")
+    with patch.object(TelegramAction, "_api") as api:
+        policy.evaluate(working, _utility_get_context(directory, [listener, working]))
+    api.assert_not_called()
+
+    # terminal has no typing method — thinking attaches, typing skipped
+    terminal_listener = _utility_get_operand(
+        "listener2", None,
+        requests=[ActionDescription(id="r2", action_name="terminal", method_name="listen")],
+        results=[ActionResult(contents="hello")],
+    )
+    working2 = _utility_get_operand("working2", "listener2")
+    evaluated = policy.evaluate(
+        working2, _utility_get_context(directory, [terminal_listener, working2])
+    )
+    assert evaluated.action_requests[0].method_name == "complete"
+
+
+def test_react_only_turn_completes_and_rearms_listening():
+    builder = Mock(spec=ContextBuilder)
+    policy, directory = _utility_get_policy(builder)
+    listener = _utility_get_operand(
+        "listener", None,
+        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
+        results=[ActionResult(contents="thanks!", metadata={"chat_id": "42"})],
+    )
+    react = _utility_get_operand(
+        "react", "listener",
+        requests=[ActionDescription(id="r2", action_name="telegram", method_name="react",
+                                    method_parameters={"chat_id": "42", "message_id": "7", "emoji": "👍"})],
+        results=[ActionResult(contents="👍")],
+    )
+    working = _utility_get_operand("working", "react")
+
+    evaluated = policy.evaluate(
+        working, _utility_get_context(directory, [listener, react, working])
+    )
+
+    assert evaluated.action_requests[0].method_name == "listen"
+    assert evaluated.action_requests[0].action_name == "telegram"
+
+
+def test_error_results_reprompt_thinking_with_typing_instead_of_completing_turn():
+    from unittest.mock import patch
+
+    directory = _utility_get_directory()
+    builder = ContextBuilder(system_prompt="sys", action_directory=directory)
+    policy = PolicyController(directory, builder, thinking_action_name="fake")
+
+    root = builder.add_root()
+    listener = builder.add_operand(
+        parent=root,
+        action_requests=[
+            ActionDescription(id="ad-1", action_name="telegram", method_name="listen")
+        ],
+        action_results=[ActionResult(contents="thanks!", metadata={"chat_id": "42"})],
+    )
+    # the model proposed a react with a hallucinated emoji; the adapter
+    # returned an error result — all-delivery, but the turn must not end
+    failed_react = builder.add_operand(
+        parent=listener,
+        action_requests=[
+            ActionDescription(id="call_1", action_name="telegram", method_name="react",
+                              method_parameters={"chat_id": "42", "message_id": "7", "emoji": "🦖"})
+        ],
+        action_results=[ActionResult(contents="", error="not an allowed reaction")],
+    )
+    working = builder.add_operand(parent=failed_react)
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        evaluated = policy.evaluate(working, builder.build(working))
+
+    assert evaluated.action_requests[0].method_name == "complete"  # re-prompt, not listen
+    api.assert_called_once_with("sendChatAction", {"chat_id": "42", "action": "typing"})
+
+
 def test_effect_results_route_to_thinking():
     policy, directory = _utility_get_policy()
     listener = _utility_get_operand(

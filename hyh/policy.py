@@ -1,6 +1,6 @@
 import logging
 
-from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD
+from hyh.action import DELIVERY_METHODS, LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, TYPING_METHOD
 from hyh.action_directory import ActionDirectory
 from hyh.context import ContextBuilder
 from hyh.logger import new_id
@@ -36,7 +36,7 @@ class PolicyController:
 
         prev = self._find(context, operand.parent)
         if prev is None:
-            self._attach_thinking(operand, reason="no_parent")
+            self._attach_thinking(operand, context, reason="no_parent")
             return operand
 
         proposals = [
@@ -63,7 +63,7 @@ class PolicyController:
                 # same channel; the normal turn flow then re-arms listening.
                 self._attach_delivery(operand, channel, EMPTY_INPUT_REPLY, result.metadata)
             else:
-                self._attach_thinking(operand, reason="stimulus_received")
+                self._attach_thinking(operand, context, reason="stimulus_received")
             return operand
 
         thinking_index = self._last_thinking_index(prev)
@@ -80,6 +80,13 @@ class PolicyController:
                 self._move_uncles(context, prev)
             return operand
 
+        if any(result.error for result in prev.action_results):
+            # A failed request (e.g. an invalid parameter the model can fix)
+            # must reach the model — even when every request was a delivery,
+            # which would otherwise end the turn silently.
+            self._attach_thinking(operand, context, reason="error_results_pending")
+            return operand
+
         if prev.action_requests and self._all_delivery(prev):
             origin = self._origin_stimulus(context)
             if origin is None:
@@ -90,7 +97,7 @@ class PolicyController:
             return operand
 
         # Effect results (tool output) need interpretation.
-        self._attach_thinking(operand, reason="effect_results_pending")
+        self._attach_thinking(operand, context, reason="effect_results_pending")
         return operand
 
     @staticmethod
@@ -120,7 +127,7 @@ class PolicyController:
 
     @staticmethod
     def _all_delivery(prev: Operand) -> bool:
-        return all(req.method_name == SEND_METHOD for req in prev.action_requests)
+        return all(req.method_name in DELIVERY_METHODS for req in prev.action_requests)
 
     def _move_uncles(self, context: Context, new_parent: Operand) -> None:
         """Bring the other channels' pending listeners to the current tip so
@@ -129,7 +136,7 @@ class PolicyController:
             self.context_builder.move(uncle, new_parent)
             log.info(f"policy decision=keep_listening operand={uncle.id} moved_to={new_parent.id}")
 
-    def _attach_thinking(self, operand: Operand, reason: str) -> None:
+    def _attach_thinking(self, operand: Operand, context: Context, reason: str) -> None:
         operand.action_requests = [
             ActionDescription(
                 id=new_id(),
@@ -138,6 +145,34 @@ class PolicyController:
             )
         ]
         log.info(f"policy operand={operand.id} decision=attach_thinking reason={reason}")
+        self._indicate_typing(operand, context)
+
+    def _indicate_typing(self, operand: Operand, context: Context) -> None:
+        """Fire the origin channel's typing indicator, recorded as an
+        already-resolved sibling of the thinking operand. Off the ancestor
+        path, so the model never sees it — and fired only here, after real
+        thinking was attached, so the indicator never lies about canned
+        replies. Channels without a typing method opt out by omission."""
+        origin = self._origin_stimulus(context)
+        prev = self._find(context, operand.parent)
+        if origin is None or prev is None:
+            return
+        channel, stimulus = origin
+        action = self.action_directory.get(channel)
+        method = action.methods.get(TYPING_METHOD)
+        if method is None:
+            return
+        properties = method.parameters_schema.get("properties", {})
+        parameters = {k: v for k, v in stimulus.metadata.items() if k in properties}
+        request = ActionDescription(
+            id=new_id(), action_name=channel, method_name=TYPING_METHOD,
+            method_parameters=parameters,
+        )
+        result = action.run(TYPING_METHOD, parameters, context)
+        self.context_builder.add_operand(
+            parent=prev, action_requests=[request], action_results=[result]
+        )
+        log.info(f"policy operand={operand.id} decision=typing_indicator channel={channel}")
 
     def _attach_null(self, operand: Operand, reason: str) -> None:
         operand.action_requests = [

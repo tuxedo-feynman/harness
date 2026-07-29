@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from hyh.action import LISTEN_METHOD, SEND_METHOD, Action
+from hyh.action import LISTEN_METHOD, POLL_METHOD, REACT_METHOD, SEND_METHOD, TYPING_METHOD, Action
 from hyh.config import TelegramActionConfig
 from hyh.models import ActionResult, Context
 
@@ -17,6 +17,16 @@ RECONNECT_SECONDS = 5
 TRANSIENT_ERRORS = (urllib.error.URLError, ConnectionError, TimeoutError)
 API_ATTEMPTS = 3
 MESSAGE_LIMIT = 4096  # Telegram rejects longer sendMessage texts with a 400
+
+# The Bot API's fixed set of reaction emoji; anything else is a 400.
+ALLOWED_REACTIONS = (
+    "👍", "👎", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱", "🤬", "😢",
+    "🎉", "🤩", "🤮", "💩", "🙏", "👌", "🕊", "🤡", "🥱", "🥴", "😍", "🐳",
+    "❤‍🔥", "🌚", "🌭", "💯", "🤣", "⚡", "🍌", "🏆", "💔", "🤨", "😐", "🍓",
+    "🍾", "💋", "🖕", "😈", "😴", "😭", "🤓", "👻", "👨‍💻", "👀", "🎃", "🙈",
+    "😇", "😨", "🤝", "✍", "🤗", "🫡", "🎅", "🎄", "☃", "💅", "🤪", "🗿",
+    "🆒", "💘", "🙉", "😎", "👾", "🤷‍♂", "🤷", "🤷‍♀", "😡",
+)
 
 # Split-point preference tiers: paragraph, line, sentence, word. Within a
 # tier the rightmost match in the window wins. Sentence enders are a set
@@ -69,8 +79,71 @@ class TelegramAction(Action):
                 "properties": {
                     "text": {"type": "string", "description": "Text to send"},
                     "chat_id": {"type": "string", "description": "Numeric Telegram chat id"},
+                    "reply_to_message_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional: message_id of a message to reply to, "
+                            "threading this response under it"
+                        ),
+                    },
                 },
                 "required": ["text", "chat_id"],
+            },
+        ),
+        REACT_METHOD: Action.MethodDescription(
+            name=REACT_METHOD,
+            description=(
+                "React to a Telegram message with a single emoji — a "
+                "lightweight acknowledgment instead of a text reply."
+            ),
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string", "description": "Numeric Telegram chat id"},
+                    "message_id": {
+                        "type": "string",
+                        "description": "message_id of the message to react to",
+                    },
+                    "emoji": {"type": "string", "enum": list(ALLOWED_REACTIONS)},
+                },
+                "required": ["chat_id", "message_id", "emoji"],
+            },
+        ),
+        POLL_METHOD: Action.MethodDescription(
+            name=POLL_METHOD,
+            description=(
+                "Send a native multiple-choice poll to a Telegram chat. Polls "
+                "are non-anonymous; each vote arrives back as a message giving "
+                "the chosen option indexes into your options list."
+            ),
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string", "description": "Numeric Telegram chat id"},
+                    "question": {"type": "string", "description": "The question to ask"},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "maxItems": 10,
+                        "description": "The answer choices",
+                    },
+                },
+                "required": ["chat_id", "question", "options"],
+            },
+        ),
+        TYPING_METHOD: Action.MethodDescription(
+            name=TYPING_METHOD,
+            description=(
+                "Show the 'typing...' indicator in a Telegram chat for a few "
+                "seconds. Fired automatically when thinking starts."
+            ),
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string", "description": "Numeric Telegram chat id"},
+                },
+                "required": ["chat_id"],
             },
         ),
         LISTEN_METHOD: Action.MethodDescription(
@@ -93,18 +166,88 @@ class TelegramAction(Action):
             text = arguments.get("text")
             chat_id = arguments.get("chat_id")
             if not isinstance(text, str):
-                raise ValueError("'text' must be a string")
+                return ActionResult(contents="", error="'text' must be a string")
+            if chat_id is None:
+                return ActionResult(contents="", error="'chat_id' is required")
+            reply_to = arguments.get("reply_to_message_id")
+            if reply_to is not None:
+                try:
+                    reply_to = int(reply_to)
+                except (TypeError, ValueError):
+                    return ActionResult(
+                        contents="",
+                        error=f"'reply_to_message_id' must be numeric, got {reply_to!r}",
+                    )
+            for i, chunk in enumerate(_split_message(text, MESSAGE_LIMIT)):
+                params: dict[str, Any] = {"chat_id": str(chat_id), "text": chunk}
+                if reply_to is not None and i == 0:
+                    # Only the first chunk threads; the rest follow it.
+                    params["reply_parameters"] = {"message_id": reply_to}
+                self._api_retrying("sendMessage", params)
+            return ActionResult(contents=text)
+        if method_name == TYPING_METHOD:
+            chat_id = arguments.get("chat_id")
             if chat_id is None:
                 raise ValueError("'chat_id' is required")
-            for chunk in _split_message(text, MESSAGE_LIMIT):
-                self._api_retrying("sendMessage", {"chat_id": str(chat_id), "text": chunk})
-            return ActionResult(contents=text)
+            self._api_retrying("sendChatAction", {"chat_id": str(chat_id), "action": "typing"})
+            return ActionResult(contents="")
+        if method_name == REACT_METHOD:
+            chat_id = arguments.get("chat_id")
+            message_id = arguments.get("message_id")
+            emoji = arguments.get("emoji")
+            if chat_id is None:
+                return ActionResult(contents="", error="'chat_id' is required")
+            try:
+                message_id = int(message_id)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return ActionResult(
+                    contents="", error=f"'message_id' must be numeric, got {message_id!r}"
+                )
+            if emoji not in ALLOWED_REACTIONS:
+                return ActionResult(
+                    contents="",
+                    error=(
+                        f"{emoji!r} is not an allowed telegram reaction emoji; "
+                        "pick one from the method schema's enum"
+                    ),
+                )
+            self._api_retrying(
+                "setMessageReaction",
+                {
+                    "chat_id": str(chat_id),
+                    "message_id": message_id,
+                    "reaction": [{"type": "emoji", "emoji": emoji}],
+                },
+            )
+            return ActionResult(contents=emoji)
+        if method_name == POLL_METHOD:
+            chat_id = arguments.get("chat_id")
+            question = arguments.get("question")
+            options = arguments.get("options")
+            if chat_id is None:
+                return ActionResult(contents="", error="'chat_id' is required")
+            if not isinstance(question, str):
+                return ActionResult(contents="", error="'question' must be a string")
+            if not isinstance(options, list) or not 2 <= len(options) <= 10:
+                return ActionResult(contents="", error="'options' must be a list of 2 to 10 strings")
+            self._api_retrying(
+                "sendPoll",
+                {
+                    "chat_id": str(chat_id),
+                    "question": question,
+                    "options": [{"text": str(option)} for option in options],
+                    # Anonymous polls emit no poll_answer updates; votes only
+                    # come back to listen() from non-anonymous polls.
+                    "is_anonymous": False,
+                },
+            )
+            return ActionResult(contents=question)
         if method_name == LISTEN_METHOD:
             while True:
                 try:
                     response = self._api(
                         "getUpdates",
-                        {"timeout": POLL_SECONDS, "offset": self._offset, "allowed_updates": ["message"]},
+                        {"timeout": POLL_SECONDS, "offset": self._offset, "allowed_updates": ["message", "poll_answer"]},
                     )
                 except TRANSIENT_ERRORS as e:
                     # Transport lifecycle, not a system failure: idle long-poll
@@ -131,7 +274,27 @@ class TelegramAction(Action):
         (entries match on numeric chat id or @username). Sender identity is
         event data, so it travels in the result's metadata. Messages from an
         allowed chat with unsupported content (voice, photo, ...) become
-        empty-content stimuli so Policy can reply honestly."""
+        empty-content stimuli so Policy can reply honestly. Poll votes arrive
+        as poll_answer updates; in a private chat the voter's user id is the
+        chat id, so the allow-list applies unchanged."""
+        poll_answer = update.get("poll_answer")
+        if poll_answer is not None:
+            user = poll_answer.get("user") or {}
+            chat_id = user.get("id")
+            if chat_id is None:
+                log.warning(f"telegram_update_skipped reason=no_voter keys={sorted(update.keys())}")
+                return None
+            username = (user.get("username") or "").lower()
+            if self.config.chat_ids and not self._allowed(chat_id, username):
+                log.warning(
+                    f"telegram_vote_ignored chat_id={chat_id} username={username or '?'} reason=not_in_chat_ids"
+                )
+                return None
+            log.info(f"telegram_vote_accepted chat_id={chat_id} username={username or '?'}")
+            return ActionResult(
+                contents=f"[poll vote: option_ids={poll_answer.get('option_ids', [])}]",
+                metadata={"chat_id": str(chat_id), "username": username, "poll_answer": poll_answer},
+            )
         message = update.get("message") or {}
         chat = message.get("chat") or {}
         chat_id = chat.get("id")

@@ -16,6 +16,14 @@ from hyh.models import ActionKind, ActionResult, Context
 LISTEN_METHOD = "listen"
 SEND_METHOD = "send"
 THINKING_METHOD = "complete"
+TYPING_METHOD = "typing"
+REACT_METHOD = "react"
+POLL_METHOD = "poll"
+
+# Methods that deliver to the world: a turn whose requests are all
+# deliveries is complete, and listening re-arms. typing is deliberately
+# not one — it signals work in progress, not a finished turn.
+DELIVERY_METHODS = frozenset({SEND_METHOD, REACT_METHOD, POLL_METHOD})
 
 
 class Action(ABC):

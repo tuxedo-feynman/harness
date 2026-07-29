@@ -204,6 +204,100 @@ def test_split_message_prefers_readable_boundaries():
     assert _split_message("one two three", 5) == ["one ", "two ", "three"]
 
 
+def test_send_threads_reply_on_first_chunk_only():
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+    text = "a" * 4000 + "\n\n" + "b" * 4000
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        action.run("send", {"text": text, "chat_id": "42", "reply_to_message_id": "7"}, context)
+
+    first, second = [call.args[1] for call in api.call_args_list]
+    assert first["reply_parameters"] == {"message_id": 7}
+    assert "reply_parameters" not in second
+
+
+def test_typing_sends_chat_action():
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        result = action.run("typing", {"chat_id": "42"}, context)
+
+    api.assert_called_once_with("sendChatAction", {"chat_id": "42", "action": "typing"})
+    assert result.contents == ""
+
+
+def test_react_posts_reaction_and_rejects_unknown_emoji():
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        result = action.run("react", {"chat_id": "42", "message_id": "7", "emoji": "👍"}, context)
+
+    api.assert_called_once_with(
+        "setMessageReaction",
+        {"chat_id": "42", "message_id": 7, "reaction": [{"type": "emoji", "emoji": "👍"}]},
+    )
+    assert result.contents == "👍"
+
+    # a hallucinated emoji is LLM-fixable: an error result, not a crash
+    with patch.object(TelegramAction, "_api") as api:
+        result = action.run("react", {"chat_id": "42", "message_id": "7", "emoji": "🦖"}, context)
+    api.assert_not_called()
+    assert result.error is not None and "🦖" in result.error
+
+
+def test_poll_posts_question_and_wrapped_options():
+    action = TelegramAction(TelegramActionConfig(token="t"))
+    context = Context(system_prompt="", history=[], available_actions={})
+
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        result = action.run(
+            "poll", {"chat_id": "42", "question": "Lunch?", "options": ["yes", "no"]}, context
+        )
+
+    api.assert_called_once_with(
+        "sendPoll",
+        {
+            "chat_id": "42",
+            "question": "Lunch?",
+            "options": [{"text": "yes"}, {"text": "no"}],
+            "is_anonymous": False,
+        },
+    )
+    assert result.contents == "Lunch?"
+
+    with patch.object(TelegramAction, "_api") as api:
+        result = action.run("poll", {"chat_id": "42", "question": "?", "options": ["only"]}, context)
+    api.assert_not_called()
+    assert result.error is not None and "2 to 10" in result.error
+
+
+def test_accept_poll_answers_with_allow_list():
+    action = TelegramAction(TelegramActionConfig(token="t", chat_ids=["@MrFantasticZero"]))
+    vote = {
+        "update_id": 9,
+        "poll_answer": {
+            "poll_id": "p1",
+            "user": {"id": 42, "username": "mrfantasticzero"},
+            "option_ids": [1],
+        },
+    }
+
+    result = action._accept(vote)
+    assert result is not None
+    assert result.contents == "[poll vote: option_ids=[1]]"
+    assert result.metadata["chat_id"] == "42"
+    assert result.metadata["poll_answer"]["poll_id"] == "p1"  # the full event is recorded
+
+    intruder = {
+        "update_id": 10,
+        "poll_answer": {"poll_id": "p1", "user": {"id": 99, "username": "eve"}, "option_ids": [0]},
+    }
+    assert action._accept(intruder) is None
+
+
 def test_api_crashes_on_client_errors_and_retries_server_errors():
     import email.message
     import io
@@ -232,12 +326,10 @@ def test_api_crashes_on_client_errors_and_retries_server_errors():
     ):
         result = action.run("send", {"text": "hi", "chat_id": "42"}, context)
     assert result.contents == "hi"
-    action = TelegramAction(TelegramActionConfig(token="t"))
-    context = Context(system_prompt="", history=[], available_actions={})
-    with pytest.raises(ValueError, match="'text' must be a string"):
-        action.run("send", {"chat_id": "42"}, context)
-    with pytest.raises(ValueError, match="'chat_id' is required"):
-        action.run("send", {"text": "hi"}, context)
+    # bad arguments are LLM-fixable: error results, not crashes
+    assert action.run("send", {"chat_id": "42"}, context).error == "'text' must be a string"
+    assert action.run("send", {"text": "hi"}, context).error == "'chat_id' is required"
+    # an unknown method is a vocabulary bug, not an LLM slip — still raises
     with pytest.raises(ValueError, match="Unknown method: 'beep'"):
         action.run("beep", {}, context)
 

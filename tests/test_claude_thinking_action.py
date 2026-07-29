@@ -113,6 +113,44 @@ def test_to_claude_messages_reconstructs_a_full_turn():
     ]
 
 
+def test_to_claude_messages_marks_error_results():
+    builder = _utility_get_builder()
+    root = builder.add_root()
+    listener = builder.add_operand(
+        parent=root,
+        action_requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
+        action_results=[ActionResult(contents="question")],
+    )
+    proposal = ActionDescription(
+        id="toolu_1", action_name="terminal", method_name="send", method_parameters={}
+    )
+    thinking = builder.add_operand(
+        parent=listener,
+        action_requests=[ActionDescription(id="r2", action_name="fake", method_name="complete")],
+        action_results=[ActionResult(contents="", action_description_requests=[proposal])],
+    )
+    failed = builder.add_operand(
+        parent=thinking,
+        action_requests=[proposal],
+        action_results=[ActionResult(contents="", error="'text' must be a string")],
+    )
+    anchor = builder.add_operand(parent=failed)
+
+    messages = ClaudeThinkingAction(ClaudeActionConfig())._to_claude_messages(builder.build(anchor))
+
+    assert messages[-1] == {
+        "role": "user",
+        "content": [
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_1",
+                "content": "'text' must be a string",
+                "is_error": True,
+            }
+        ],
+    }
+
+
 def test_parse_response_converts_a_mocked_api_response():
     thinking_block = Mock(type="thinking")
     thinking_block.model_dump.return_value = {"type": "thinking", "thinking": "", "signature": "sig"}

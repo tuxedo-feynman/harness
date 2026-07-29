@@ -106,18 +106,14 @@ class ClaudeThinkingAction(Action):
                         messages.append({"role": "assistant", "content": blocks})
                         last_assistant_text = result.contents
                 elif kind == "effect" and request.id in proposal_ids:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": request.id,
-                                    "content": result.contents,
-                                }
-                            ],
-                        }
-                    )
+                    block: dict[str, Any] = {
+                        "type": "tool_result",
+                        "tool_use_id": request.id,
+                        "content": result.error or result.contents,
+                    }
+                    if result.error:
+                        block["is_error"] = True
+                    messages.append({"role": "user", "content": [block]})
                 elif request.method_name == SEND_METHOD and result.contents != last_assistant_text:
                     # A policy-authored send (e.g. a canned reply) is something
                     # the user heard from "the assistant" — the model must see
