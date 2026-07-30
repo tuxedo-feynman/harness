@@ -14,10 +14,10 @@ def test_send_writes_to_stdout_and_returns_text(capsys):
     assert capsys.readouterr().out == "hello\n"
 
 
-def test_listen_returns_programmed_input():
+def test_input_returns_programmed_line():
     context = Context(system_prompt="", history=[], available_actions={})
     with patch("builtins.input", return_value="canned line") as fake_input:
-        result = TerminalAction().run("listen", {}, context)
+        result = TerminalAction().run("input", {}, context)
     assert result.contents == "canned line"
     fake_input.assert_called_once()
 

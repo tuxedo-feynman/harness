@@ -31,7 +31,7 @@ def test_build_tools_advertises_effect_methods_only():
     builder = _utility_get_builder()
     action = ClaudeThinkingAction(ClaudeActionConfig())
 
-    tools, lookup = action._build_tools(builder.build(builder.add_root()))
+    tools, lookup = action._build_tools(builder.build([builder.add_root()]))
 
     names = {tool["name"] for tool in tools}
     # fake and null excluded; listen and typing are the harness's verbs,
@@ -45,54 +45,48 @@ def test_to_claude_messages_reconstructs_a_full_turn():
     builder = _utility_get_builder()
     root = builder.add_root()
     listener = builder.add_operand(
-        parent=root,
-        action_requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        action_results=[ActionResult(contents="question")],
+        parents=[root], order=0,
+        action_request=ActionDescription(id="r1", action_name="terminal", method_name="input"),
+        action_result=ActionResult(contents="question"),
     )
     proposal = ActionDescription(
         id="toolu_9", action_name="terminal", method_name="send", method_parameters={"text": "hi"}
     )
     thinking = builder.add_operand(
-        parent=listener,
-        action_requests=[ActionDescription(id="r2", action_name="fake", method_name="complete")],
-        action_results=[
-            ActionResult(
-                contents="thinking aloud",
-                metadata={"thinking_blocks": [{"type": "thinking", "thinking": "", "signature": "sig"}]},
-                action_description_requests=[proposal],
-            )
-        ],
+        parents=[listener], order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(
+            contents="thinking aloud",
+            metadata={"thinking_blocks": [{"type": "thinking", "thinking": "", "signature": "sig"}]},
+            action_description_requests=[proposal],
+        ),
     )
     effect = builder.add_operand(
-        parent=thinking,
-        action_requests=[proposal],  # same ActionDescription: id pairs the tool result
-        action_results=[ActionResult(contents="hi")],
+        parents=[thinking], order=0,
+        action_request=proposal,  # same ActionDescription: id pairs the tool result
+        action_result=ActionResult(contents="hi"),
     )
     # a delivery relaying the thinking result's own text is already emitted — skipped
     relay = builder.add_operand(
-        parent=effect,
-        action_requests=[
-            ActionDescription(id="relay", action_name="terminal", method_name="send",
-                              method_parameters={"text": "thinking aloud"})
-        ],
-        action_results=[ActionResult(contents="thinking aloud")],
+        parents=[effect], order=0,
+        action_request=ActionDescription(id="relay", action_name="terminal", method_name="send",
+                                         method_parameters={"text": "thinking aloud"}),
+        action_result=ActionResult(contents="thinking aloud"),
     )
     # a policy-AUTHORED send (e.g. a canned reply) is a new assistant utterance
     synthesized = builder.add_operand(
-        parent=relay,
-        action_requests=[
-            ActionDescription(id="synth", action_name="terminal", method_name="send",
-                              method_parameters={"text": "bye"})
-        ],
-        action_results=[ActionResult(contents="bye")],
+        parents=[relay], order=0,
+        action_request=ActionDescription(id="synth", action_name="terminal", method_name="send",
+                                         method_parameters={"text": "bye"}),
+        action_result=ActionResult(contents="bye"),
     )
     null = builder.add_operand(
-        parent=synthesized,
-        action_requests=[ActionDescription(id="r5", action_name="null", method_name="terminate")],
-        action_results=[ActionResult(contents="")],
+        parents=[synthesized], order=0,
+        action_request=ActionDescription(id="r5", action_name="null", method_name="terminate"),
+        action_result=ActionResult(contents=""),
     )
 
-    messages = ClaudeThinkingAction(ClaudeActionConfig())._to_claude_messages(builder.build(null))
+    messages = ClaudeThinkingAction(ClaudeActionConfig())._to_claude_messages(builder.build([null]))
 
     assert messages == [
         {"role": "user", "content": "question"},
@@ -133,26 +127,25 @@ def test_to_claude_messages_marks_error_results():
     builder = _utility_get_builder()
     root = builder.add_root()
     listener = builder.add_operand(
-        parent=root,
-        action_requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        action_results=[ActionResult(contents="question")],
+        parents=[root], order=0,
+        action_request=ActionDescription(id="r1", action_name="terminal", method_name="input"),
+        action_result=ActionResult(contents="question"),
     )
     proposal = ActionDescription(
         id="toolu_1", action_name="terminal", method_name="send", method_parameters={}
     )
     thinking = builder.add_operand(
-        parent=listener,
-        action_requests=[ActionDescription(id="r2", action_name="fake", method_name="complete")],
-        action_results=[ActionResult(contents="", action_description_requests=[proposal])],
+        parents=[listener], order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents="", action_description_requests=[proposal]),
     )
     failed = builder.add_operand(
-        parent=thinking,
-        action_requests=[proposal],
-        action_results=[ActionResult(contents="", error="'text' must be a string")],
+        parents=[thinking], order=0,
+        action_request=proposal,
+        action_result=ActionResult(contents="", error="'text' must be a string"),
     )
-    anchor = builder.add_operand(parent=failed)
 
-    messages = ClaudeThinkingAction(ClaudeActionConfig())._to_claude_messages(builder.build(anchor))
+    messages = ClaudeThinkingAction(ClaudeActionConfig())._to_claude_messages(builder.build([failed]))
 
     assert messages[-1] == {
         "role": "user",

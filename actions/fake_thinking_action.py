@@ -1,6 +1,6 @@
 from typing import Any
 
-from hyh.action import LISTEN_METHOD, THINKING_METHOD, Action
+from hyh.action import INPUT_METHOD, THINKING_METHOD, Action
 from hyh.models import ActionResult, Context
 
 
@@ -31,10 +31,12 @@ class FakeThinkingAction(Action):
             return self._responses.pop(0)
 
         user_inputs = [
-            result.contents
+            operand.action_result.contents
             for operand in context.history
-            for request, result in zip(operand.action_requests, operand.action_results)
-            if request.method_name == LISTEN_METHOD and result.contents.strip()
+            if operand.action_request is not None
+            and operand.action_result is not None
+            and operand.action_request.method_name == INPUT_METHOD
+            and operand.action_result.contents.strip()
         ]
         if len(user_inputs) <= 1:
             return ActionResult(contents="Hello! How can I help you?")

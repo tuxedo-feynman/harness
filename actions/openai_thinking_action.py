@@ -2,7 +2,7 @@ import json
 import os
 from typing import Any
 
-from hyh.action import LISTEN_METHOD, SEND_METHOD, THINKING_METHOD, TYPING_METHOD, Action
+from hyh.action import INPUT_METHOD, SEND_METHOD, THINKING_METHOD, TYPING_METHOD, Action
 from hyh.config import ThinkingActionConfig
 from hyh.models import ActionDescription, ActionResult, Context
 
@@ -54,7 +54,7 @@ class OpenAIThinkingAction(Action):
             if available.kind != "effect":
                 continue
             for method in available.methods.values():
-                if method.name in (LISTEN_METHOD, TYPING_METHOD):
+                if method.name in (INPUT_METHOD, TYPING_METHOD):
                     # The harness's verbs: Policy arms listeners and fires
                     # typing — the model proposing either bypasses Policy.
                     continue
@@ -81,44 +81,50 @@ class OpenAIThinkingAction(Action):
         proposal_ids: set[str] = set()
         last_assistant_text = ""
         for operand in context.history:
-            for request, result in zip(operand.action_requests, operand.action_results):
-                kind = self._kind_of(context, request.action_name)
-                if request.method_name == LISTEN_METHOD:
-                    messages.append(
-                        {"role": "user", "content": self._render_stimulus(result)}
-                    )
-                elif kind == "thinking":
-                    message: dict[str, Any] = {
-                        "role": "assistant",
-                        "content": result.contents or None,
+            request, result = operand.action_request, operand.action_result
+            if request is None or result is None:
+                continue  # the root, or an unresolved leaf
+            kind = self._kind_of(context, request.action_name)
+            if request.method_name == INPUT_METHOD:
+                messages.append(
+                    {"role": "user", "content": self._render_stimulus(result)}
+                )
+            elif kind == "thinking":
+                message: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": result.contents or None,
+                }
+                if result.action_description_requests:
+                    message["tool_calls"] = [
+                        {
+                            "id": ad.id,
+                            "type": "function",
+                            "function": {
+                                "name": f"{ad.action_name}_{ad.method_name}",
+                                "arguments": json.dumps(ad.method_parameters),
+                            },
+                        }
+                        for ad in result.action_description_requests
+                    ]
+                    proposal_ids.update(ad.id for ad in result.action_description_requests)
+                messages.append(message)
+                last_assistant_text = result.contents or ""
+            elif kind == "effect" and request.id in proposal_ids:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": request.id,
+                        "content": result.error or result.contents,
                     }
-                    if result.action_description_requests:
-                        message["tool_calls"] = [
-                            {
-                                "id": ad.id,
-                                "type": "function",
-                                "function": {
-                                    "name": f"{ad.action_name}_{ad.method_name}",
-                                    "arguments": json.dumps(ad.method_parameters),
-                                },
-                            }
-                            for ad in result.action_description_requests
-                        ]
-                        proposal_ids.update(ad.id for ad in result.action_description_requests)
-                    messages.append(message)
-                    last_assistant_text = result.contents or ""
-                elif kind == "effect" and request.id in proposal_ids:
-                    messages.append(
-                        {"role": "tool", "tool_call_id": request.id, "content": result.contents}
-                    )
-                elif request.method_name == SEND_METHOD and result.contents != last_assistant_text:
-                    # A policy-authored send (e.g. a canned reply) is something
-                    # the user heard from "the assistant" — the model must see
-                    # it too. Deliveries relaying the thinking result's own
-                    # text are the utterance already emitted, so they're skipped.
-                    messages.append({"role": "assistant", "content": result.contents})
-                    last_assistant_text = result.contents
-                # Anything else (null, delivery relays) isn't model-facing.
+                )
+            elif request.method_name == SEND_METHOD and result.contents != last_assistant_text:
+                # A policy-authored send (e.g. a canned reply) is something
+                # the user heard from "the assistant" — the model must see
+                # it too. Deliveries relaying the thinking result's own
+                # text are the utterance already emitted, so they're skipped.
+                messages.append({"role": "assistant", "content": result.contents})
+                last_assistant_text = result.contents
+            # Anything else (null, delivery relays) isn't model-facing.
         return messages
 
     def _parse_response(self, response: Any, lookup: dict[str, tuple[str, str]]) -> ActionResult:

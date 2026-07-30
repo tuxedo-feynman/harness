@@ -47,7 +47,7 @@ def test_listen_returns_message_from_a_mocked_api():
     context = Context(system_prompt="", history=[], available_actions={})
 
     with patch.object(TelegramAction, "_api", return_value={"result": [update]}) as api:
-        result = action.run("listen", {}, context)
+        result = action.run("input", {}, context)
 
     assert result.contents == "yo"
     assert api.call_count == 2  # the poll, then the immediate ack
@@ -95,7 +95,7 @@ def test_listen_skips_filtered_updates_within_one_poll():
     ]
 
     with patch.object(TelegramAction, "_api", return_value={"result": updates}):
-        result = action.run("listen", {}, context)
+        result = action.run("input", {}, context)
 
     assert result.contents == "hello"
     assert action._offset == 12  # past both updates
@@ -118,7 +118,7 @@ def test_listen_reconnects_after_transient_connection_errors():
         ) as api,
         patch("actions.telegram_action.time.sleep") as sleep,
     ):
-        result = action.run("listen", {}, context)
+        result = action.run("input", {}, context)
 
     assert result.contents == "back online"
     sleep.assert_called_once_with(5)

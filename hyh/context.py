@@ -9,12 +9,12 @@ log = logging.getLogger(__name__)
 
 
 class ContextBuilder:
-    """Owns the operand tree for the life of the process. The tree (parent
+    """Owns the operand DAG for the life of the process. The graph (parent
     pointers) is the sole source of truth; the flat list is storage only.
 
     Invariants: children only attach beneath resolved operands, so unresolved
     operands are always leaves. Resolved operands are immutable history;
-    unresolved operands are live state -- filled by Policy, moved here.
+    unresolved operands are live state -- filled by the loop, moved here.
     """
 
     def __init__(self, system_prompt: str, action_directory: ActionDirectory):
@@ -25,42 +25,50 @@ class ContextBuilder:
         self._listeners: dict[str, Operand] = {}  # channel action name -> pending operand
 
     def add_root(self) -> Operand:
-        """The synthetic session-start operand. Initial listeners attach to it."""
+        """The synthetic session-start operand. Initial input requests attach
+        to it."""
         if self._operands:
             raise RuntimeError("Root operand already exists")
-        return self._add(parent_id=None)
+        return self._add(parents=[], order=0)
 
     def add_operand(
         self,
-        parent: Operand,
-        action_requests: list[ActionDescription] | None = None,
-        action_results: list[ActionResult] | None = None,
+        parents: list[Operand],
+        order: int,
+        action_request: ActionDescription | None = None,
+        action_result: ActionResult | None = None,
     ) -> Operand:
-        return self._add(parent.id, action_requests, action_results)
+        return self._add([p.id for p in parents], order, action_request, action_result)
 
     def _add(
         self,
-        parent_id: str | None,
-        action_requests: list[ActionDescription] | None = None,
-        action_results: list[ActionResult] | None = None,
+        parents: list[str],
+        order: int,
+        action_request: ActionDescription | None = None,
+        action_result: ActionResult | None = None,
     ) -> Operand:
         operand = Operand(
             id=new_id(),
             created_at=datetime.now(timezone.utc),
-            parent=parent_id,
-            action_requests=list(action_requests or []),
-            action_results=list(action_results or []),
+            parents=list(parents),
+            order=order,
+            action_request=action_request,
+            action_result=action_result,
         )
         self._operands.append(operand)
         self._by_id[operand.id] = operand
-        log.info(f"operand_created id={operand.id} parent={operand.parent}")
+        log.info(f"operand_created id={operand.id} parents={','.join(parents) or None} order={order}")
         return operand
 
-    def move(self, operand: Operand, new_parent: Operand) -> None:
+    def move(self, operand: Operand, new_parents: list[Operand]) -> None:
         """Reparent a pending operand. Only unresolved operands (live state,
-        e.g. armed listeners) are ever moved; resolved operands are history."""
-        log.info(f"operand_moved id={operand.id} from={operand.parent} to={new_parent.id}")
-        operand.parent = new_parent.id
+        e.g. armed input requests) are ever moved; resolved operands are
+        history."""
+        log.info(
+            f"operand_moved id={operand.id} from={','.join(operand.parents)}"
+            f" to={','.join(p.id for p in new_parents)}"
+        )
+        operand.parents = [p.id for p in new_parents]
 
     def park_listener(self, channel: str, operand: Operand) -> None:
         self._listeners[channel] = operand
@@ -71,19 +79,38 @@ class ContextBuilder:
     def listener_channels(self) -> set[str]:
         return set(self._listeners)
 
-    def build(self, anchor: Operand) -> Context:
-        """Context as seen from anchor: history is the ancestor path from the
-        root to anchor. Pending listeners and dead branches are off-path and
-        excluded automatically."""
-        path: list[Operand] = []
-        cursor: Operand | None = anchor
-        while cursor is not None:
-            path.append(cursor)
-            cursor = self._by_id.get(cursor.parent) if cursor.parent else None
-        path.reverse()
+    def build(self, frontier: list[Operand]) -> Context:
+        """Context as seen from the frontier: history is the ancestor closure
+        of the frontier, linearized in topological order with sibling-order
+        tie-breaks (deterministic). Pending listeners and dead branches are
+        off the closure and excluded automatically."""
+        closure: dict[str, Operand] = {}
+        stack = list(frontier)
+        while stack:
+            cursor = stack.pop()
+            if cursor.id in closure:
+                continue
+            closure[cursor.id] = cursor
+            stack.extend(self._by_id[pid] for pid in cursor.parents)
+
+        history: list[Operand] = []
+        emitted: set[str] = set()
+        ready = [op for op in closure.values() if not op.parents]
+        while ready:
+            ready.sort(key=lambda op: (op.order, op.created_at, op.id))
+            operand = ready.pop(0)
+            history.append(operand)
+            emitted.add(operand.id)
+            for candidate in closure.values():
+                if (
+                    candidate.id not in emitted
+                    and candidate not in ready
+                    and all(pid in emitted for pid in candidate.parents)
+                ):
+                    ready.append(candidate)
         return Context(
             system_prompt=self.system_prompt,
-            history=path,
+            history=history,
             available_actions=self.action_directory.method_index(),
             listeners=list(self._listeners.values()),
         )

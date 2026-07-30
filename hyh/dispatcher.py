@@ -2,7 +2,7 @@ import logging
 import queue
 import threading
 
-from hyh.action import LISTEN_METHOD, Action
+from hyh.action import INPUT_METHOD, Action
 from hyh.action_directory import ActionDirectory
 from hyh.context import ContextBuilder
 from hyh.logger import new_id
@@ -38,17 +38,18 @@ class Dispatcher:
         return [
             name
             for name, available in self.action_directory.method_index().items()
-            if LISTEN_METHOD in available.methods
+            if INPUT_METHOD in available.methods
         ]
 
     def arm_initial(self, root: Operand) -> None:
-        """One pending listener operand per channel, attached to the root."""
-        for channel in self._channels():
+        """One pending input request per channel, attached to the root."""
+        for order, channel in enumerate(self._channels()):
             operand = self.context_builder.add_operand(
-                parent=root,
-                action_requests=[
-                    ActionDescription(id=new_id(), action_name=channel, method_name=LISTEN_METHOD)
-                ],
+                parents=[root],
+                order=order,
+                action_request=ActionDescription(
+                    id=new_id(), action_name=channel, method_name=INPUT_METHOD
+                ),
             )
             self.context_builder.park_listener(channel, operand)
 
@@ -80,7 +81,7 @@ class Dispatcher:
         if operand is None:
             log.warning(f"stimulus_dropped channel={channel} reason=no_pending_listener")
             return
-        operand.action_results.append(result)
+        operand.action_result = result
         log.info(f"listener_resolved operand={operand.id} channel={channel}")
         self.loop.run(operand)
 
@@ -88,7 +89,7 @@ class Dispatcher:
         empty = Context(system_prompt="", history=[], available_actions={})
         while True:
             try:
-                result = action.run(LISTEN_METHOD, {}, empty)
+                result = action.run(INPUT_METHOD, {}, empty)
             except (EOFError, KeyboardInterrupt):
                 self._queue.put((action.name, None))
                 return

@@ -1,6 +1,6 @@
 from typing import Any
 
-from hyh.action import LISTEN_METHOD, SEND_METHOD, Action
+from hyh.action import INPUT_METHOD, SEND_METHOD, Action
 from hyh.models import ActionResult, Context
 
 
@@ -18,9 +18,9 @@ class TerminalAction(Action):
                 "required": ["text"],
             },
         ),
-        LISTEN_METHOD: Action.MethodDescription(
-            name=LISTEN_METHOD,
-            description="Wait for the user's next line of terminal input.",
+        INPUT_METHOD: Action.MethodDescription(
+            name=INPUT_METHOD,
+            description="The user's next line of terminal input.",
         ),
     }
 
@@ -31,6 +31,6 @@ class TerminalAction(Action):
                 raise ValueError("'text' must be a string")
             print(text, flush=True)
             return ActionResult(contents=text)
-        if method_name == LISTEN_METHOD:
+        if method_name == INPUT_METHOD:
             return ActionResult(contents=input("> "))
         raise ValueError(f"Unknown method: {method_name!r}")

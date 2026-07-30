@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from unittest.mock import Mock
+from unittest.mock import patch
 
 from actions.fake_thinking_action import FakeThinkingAction
 from actions.null_action import NullAction
@@ -8,7 +7,7 @@ from actions.terminal_action import TerminalAction
 from hyh.action_directory import ActionDirectory
 from hyh.config import TelegramActionConfig
 from hyh.context import ContextBuilder
-from hyh.models import ActionDescription, ActionResult, Context, Operand
+from hyh.models import ActionDescription, ActionResult
 from hyh.policy import PolicyController
 
 
@@ -23,364 +22,242 @@ def _utility_get_directory() -> ActionDirectory:
     )
 
 
-def _utility_get_policy(builder=None) -> tuple[PolicyController, ActionDirectory]:
-    directory = _utility_get_directory()
-    if builder is None:
-        builder = Mock(spec=ContextBuilder)
-    policy = PolicyController(directory, builder, thinking_action_name="fake")
-    return policy, directory
-
-
-def _utility_get_context(directory, history, listeners=None) -> Context:
-    return Context(
-        system_prompt="sys",
-        history=history,
-        available_actions=directory.method_index(),
-        listeners=list(listeners or []),
-    )
-
-
-def test_primary_path_attaches_thinking_after_listener_resolves():
+def _utility_get_stack() -> tuple[PolicyController, ContextBuilder]:
     directory = _utility_get_directory()
     builder = ContextBuilder(system_prompt="sys", action_directory=directory)
     policy = PolicyController(directory, builder, thinking_action_name="fake")
+    return policy, builder
 
+
+def _utility_get_stimulus(builder, channel="terminal", contents="hello", metadata=None):
     root = builder.add_root()
-    listener = builder.add_operand(
-        parent=root,
-        action_requests=[
-            ActionDescription(id="ad-1", action_name="terminal", method_name="listen")
-        ],
-        action_results=[ActionResult(contents="hello")],
-    )
-    working = builder.add_operand(parent=listener)
-
-    evaluated = policy.evaluate(working, builder.build(working))
-
-    assert len(evaluated.action_requests) == 1
-    assert evaluated.action_requests[0].action_name == "fake"
-    assert evaluated.action_requests[0].method_name == "complete"
-
-
-def _utility_get_operand(id: str, parent: str | None, requests=None, results=None) -> Operand:
-    return Operand(
-        id=id,
-        created_at=datetime(2026, 7, 27, tzinfo=timezone.utc),
-        parent=parent,
-        action_requests=list(requests or []),
-        action_results=list(results or []),
+    return builder.add_operand(
+        parents=[root],
+        order=0,
+        action_request=ActionDescription(id="ad-1", action_name=channel, method_name="input"),
+        action_result=ActionResult(contents=contents, metadata=dict(metadata or {})),
     )
 
 
-def test_turn_complete_moves_uncles_via_mocked_context_builder():
-    directory = _utility_get_directory()
-    builder = Mock(spec=ContextBuilder)
-    policy = PolicyController(directory, builder, thinking_action_name="fake")
+def test_stimulus_attaches_thinking():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(builder)
 
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        results=[ActionResult(contents="hello")],
-    )
-    delivery = _utility_get_operand(
-        "delivery", "listener",
-        requests=[ActionDescription(id="r2", action_name="terminal", method_name="send",
-                                    method_parameters={"text": "hi"})],
-        results=[ActionResult(contents="hi")],
-    )
-    working = _utility_get_operand("working", "delivery")
-    uncle = _utility_get_operand(
-        "uncle", None,
-        requests=[ActionDescription(id="r3", action_name="terminal", method_name="listen")],
-    )
-    context = Context(
-        system_prompt="sys",
-        history=[listener, delivery, working],
-        available_actions=directory.method_index(),
-        listeners=[uncle],
-    )
+    children = policy.decide([stimulus], builder.build([stimulus]))
 
-    evaluated = policy.evaluate(working, context)
-
-    builder.move.assert_called_once_with(uncle, delivery)
-    assert evaluated.action_requests[0].method_name == "listen"  # re-armed the origin channel
+    assert len(children) == 1
+    request = children[0].action_request
+    assert request is not None
+    assert request.action_name == "fake"
+    assert request.method_name == "complete"
+    assert children[0].parents == [stimulus.id]
 
 
-def test_untouched_when_requests_already_present():
-    policy, directory = _utility_get_policy()
-    request = ActionDescription(id="r1", action_name="terminal", method_name="send")
-    working = _utility_get_operand("working", None, requests=[request])
+def test_telegram_stimulus_fires_typing_as_offpath_sibling():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(builder, channel="telegram", metadata={"chat_id": "42"})
 
-    evaluated = policy.evaluate(working, _utility_get_context(directory, [working]))
+    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
+        children = policy.decide([stimulus], builder.build([stimulus]))
 
-    assert evaluated.action_requests == [request]
-
-
-def test_attaches_thinking_when_no_parent():
-    policy, directory = _utility_get_policy()
-    working = _utility_get_operand("working", None)
-
-    evaluated = policy.evaluate(working, _utility_get_context(directory, [working]))
-
-    assert evaluated.action_requests[0].action_name == "fake"
-
-
-def test_proposals_pass_through():
-    policy, directory = _utility_get_policy()
-    proposal = ActionDescription(
-        id="call_1", action_name="terminal", method_name="send", method_parameters={"text": "hi"}
-    )
-    prev = _utility_get_operand(
-        "prev", None,
-        requests=[ActionDescription(id="r1", action_name="fake", method_name="complete")],
-        results=[ActionResult(contents="", action_description_requests=[proposal])],
-    )
-    working = _utility_get_operand("working", "prev")
-
-    evaluated = policy.evaluate(working, _utility_get_context(directory, [prev, working]))
-
-    assert evaluated.action_requests == [proposal]
+    api.assert_called_once_with("sendChatAction", {"chat_id": "42", "action": "typing"})
+    thinking = children[0]
+    assert thinking.action_request is not None
+    assert thinking.action_request.method_name == "complete"
+    # the typing operand is a resolved sibling: same parents, next order,
+    # excluded from the closure the model will see
+    sibling = builder._operands[-1]
+    assert sibling.parents == [stimulus.id]
+    assert sibling.order == 1
+    assert sibling.action_request is not None
+    assert sibling.action_request.method_name == "typing"
+    assert sibling.resolved
+    assert sibling not in builder.build([thinking]).history
 
 
-def test_quit_attaches_null_and_moves_uncles():
-    builder = Mock(spec=ContextBuilder)
-    policy, directory = _utility_get_policy(builder)
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        results=[ActionResult(contents="  QUIT ")],  # whitespace and case are forgiven
-    )
-    working = _utility_get_operand("working", "listener")
-    uncle = _utility_get_operand(
-        "uncle", None,
-        requests=[ActionDescription(id="r2", action_name="telegram", method_name="listen")],
+def test_canned_reply_for_empty_input_fires_no_typing():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(
+        builder, channel="telegram", contents="", metadata={"chat_id": "42", "username": "u"}
     )
 
-    evaluated = policy.evaluate(
-        working, _utility_get_context(directory, [listener, working], listeners=[uncle])
-    )
+    with patch.object(TelegramAction, "_api") as api:
+        children = policy.decide([stimulus], builder.build([stimulus]))
 
-    assert evaluated.action_requests[0].action_name == "null"
-    builder.move.assert_called_once_with(uncle, listener)
-
-
-def test_empty_input_gets_a_canned_reply_on_the_same_channel():
-    policy, directory = _utility_get_policy()
-    # a voice note: the channel heard something it couldn't turn into text
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
-        results=[ActionResult(contents="", metadata={"chat_id": "42", "username": "u"})],
-    )
-    working = _utility_get_operand("working", "listener")
-
-    evaluated = policy.evaluate(working, _utility_get_context(directory, [listener, working]))
-
-    request = evaluated.action_requests[0]
-    assert request.action_name == "telegram"
-    assert request.method_name == "send"
-    assert request.method_parameters == {"text": "I didn't get that.", "chat_id": "42"}
-
-
-def test_delivery_routes_to_origin_channel_with_metadata():
-    policy, directory = _utility_get_policy()
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
-        results=[
-            ActionResult(contents="question", metadata={"chat_id": "42", "username": "u"})
-        ],
-    )
-    thinking = _utility_get_operand(
-        "thinking", "listener",
-        requests=[ActionDescription(id="r2", action_name="fake", method_name="complete")],
-        results=[ActionResult(contents="answer")],
-    )
-    working = _utility_get_operand("working", "thinking")
-
-    evaluated = policy.evaluate(
-        working, _utility_get_context(directory, [listener, thinking, working])
-    )
-
-    request = evaluated.action_requests[0]
+    api.assert_not_called()
+    request = children[0].action_request
+    assert request is not None
     assert request.action_name == "telegram"
     assert request.method_name == "send"
     # metadata keys in the send schema pass through; others are filtered
+    assert request.method_parameters == {"text": "I didn't get that.", "chat_id": "42"}
+
+
+def test_proposals_become_ordered_children():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(builder)
+    proposals = [
+        ActionDescription(id="call_1", action_name="terminal", method_name="send",
+                          method_parameters={"text": "a"}),
+        ActionDescription(id="call_2", action_name="terminal", method_name="send",
+                          method_parameters={"text": "b"}),
+    ]
+    thinking = builder.add_operand(
+        parents=[stimulus],
+        order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents="", action_description_requests=proposals),
+    )
+
+    children = policy.decide([thinking], builder.build([thinking]))
+
+    assert [c.action_request for c in children] == proposals
+    assert [c.order for c in children] == [0, 1]
+    assert all(c.parents == [thinking.id] for c in children)
+
+
+def test_quit_attaches_null_and_moves_uncles():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(builder, contents="  QUIT ")  # whitespace and case forgiven
+    root_id = stimulus.parents[0]
+    uncle = builder.add_operand(
+        parents=[builder._by_id[root_id]],
+        order=1,
+        action_request=ActionDescription(id="r2", action_name="telegram", method_name="input"),
+    )
+    builder.park_listener("telegram", uncle)
+
+    children = policy.decide([stimulus], builder.build([stimulus]))
+
+    assert children[0].action_request is not None
+    assert children[0].action_request.action_name == "null"
+    assert uncle.parents == [stimulus.id]  # moved to the tip
+
+
+def test_thinking_text_delivers_to_origin_with_metadata():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(
+        builder, channel="telegram", contents="question",
+        metadata={"chat_id": "42", "username": "u"},
+    )
+    thinking = builder.add_operand(
+        parents=[stimulus],
+        order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents="answer"),
+    )
+
+    children = policy.decide([thinking], builder.build([thinking]))
+
+    request = children[0].action_request
+    assert request is not None
+    assert request.action_name == "telegram"
+    assert request.method_name == "send"
     assert request.method_parameters == {"text": "answer", "chat_id": "42"}
 
 
-def test_empty_thinking_result_rearms_listener():
-    builder = Mock(spec=ContextBuilder)
-    policy, directory = _utility_get_policy(builder)
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        results=[ActionResult(contents="hello")],
-    )
-    thinking = _utility_get_operand(
-        "thinking", "listener",
-        requests=[ActionDescription(id="r2", action_name="fake", method_name="complete")],
-        results=[ActionResult(contents="")],
-    )
-    working = _utility_get_operand("working", "thinking")
-
-    evaluated = policy.evaluate(
-        working, _utility_get_context(directory, [listener, thinking, working])
+def test_empty_thinking_result_rearms_input():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(builder)
+    thinking = builder.add_operand(
+        parents=[stimulus],
+        order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents=""),
     )
 
-    assert evaluated.action_requests[0].method_name == "listen"
-    assert evaluated.action_requests[0].action_name == "terminal"
+    children = policy.decide([thinking], builder.build([thinking]))
+
+    request = children[0].action_request
+    assert request is not None
+    assert request.method_name == "input"
+    assert request.action_name == "terminal"
 
 
 def test_no_origin_channel_attaches_null():
-    policy, directory = _utility_get_policy()
-    thinking = _utility_get_operand(
-        "thinking", None,
-        requests=[ActionDescription(id="r1", action_name="fake", method_name="complete")],
-        results=[ActionResult(contents="answer")],
-    )
-    working = _utility_get_operand("working", "thinking")
-
-    evaluated = policy.evaluate(working, _utility_get_context(directory, [thinking, working]))
-
-    assert evaluated.action_requests[0].action_name == "null"
-
-
-def test_thinking_attach_fires_typing_indicator_as_offpath_sibling():
-    from unittest.mock import patch
-
-    directory = _utility_get_directory()
-    builder = ContextBuilder(system_prompt="sys", action_directory=directory)
-    policy = PolicyController(directory, builder, thinking_action_name="fake")
-
+    policy, builder = _utility_get_stack()
     root = builder.add_root()
-    listener = builder.add_operand(
-        parent=root,
-        action_requests=[
-            ActionDescription(id="ad-1", action_name="telegram", method_name="listen")
-        ],
-        action_results=[ActionResult(contents="hello", metadata={"chat_id": "42"})],
-    )
-    working = builder.add_operand(parent=listener)
-
-    with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
-        evaluated = policy.evaluate(working, builder.build(working))
-
-    assert evaluated.action_requests[0].method_name == "complete"
-    api.assert_called_once_with("sendChatAction", {"chat_id": "42", "action": "typing"})
-    # the typing operand is a resolved sibling of the thinking operand,
-    # off the ancestor path: the model's context never contains it
-    sibling = builder._operands[-1]
-    assert sibling.parent == listener.id
-    assert sibling.action_requests[0].method_name == "typing"
-    assert sibling.resolved
-    assert sibling not in builder.build(working).history
-
-
-def test_canned_reply_and_terminal_channel_fire_no_typing():
-    from unittest.mock import patch
-
-    policy, directory = _utility_get_policy()
-
-    # empty input gets the canned reply — no thinking, so no typing
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
-        results=[ActionResult(contents="", metadata={"chat_id": "42"})],
-    )
-    working = _utility_get_operand("working", "listener")
-    with patch.object(TelegramAction, "_api") as api:
-        policy.evaluate(working, _utility_get_context(directory, [listener, working]))
-    api.assert_not_called()
-
-    # terminal has no typing method — thinking attaches, typing skipped
-    terminal_listener = _utility_get_operand(
-        "listener2", None,
-        requests=[ActionDescription(id="r2", action_name="terminal", method_name="listen")],
-        results=[ActionResult(contents="hello")],
-    )
-    working2 = _utility_get_operand("working2", "listener2")
-    evaluated = policy.evaluate(
-        working2, _utility_get_context(directory, [terminal_listener, working2])
-    )
-    assert evaluated.action_requests[0].method_name == "complete"
-
-
-def test_react_only_turn_completes_and_rearms_listening():
-    builder = Mock(spec=ContextBuilder)
-    policy, directory = _utility_get_policy(builder)
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="telegram", method_name="listen")],
-        results=[ActionResult(contents="thanks!", metadata={"chat_id": "42"})],
-    )
-    react = _utility_get_operand(
-        "react", "listener",
-        requests=[ActionDescription(id="r2", action_name="telegram", method_name="react",
-                                    method_parameters={"chat_id": "42", "message_id": "7", "emoji": "👍"})],
-        results=[ActionResult(contents="👍")],
-    )
-    working = _utility_get_operand("working", "react")
-
-    evaluated = policy.evaluate(
-        working, _utility_get_context(directory, [listener, react, working])
+    thinking = builder.add_operand(
+        parents=[root],
+        order=0,
+        action_request=ActionDescription(id="r1", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents="answer"),
     )
 
-    assert evaluated.action_requests[0].method_name == "listen"
-    assert evaluated.action_requests[0].action_name == "telegram"
+    children = policy.decide([thinking], builder.build([thinking]))
+
+    assert children[0].action_request is not None
+    assert children[0].action_request.action_name == "null"
 
 
-def test_error_results_reprompt_thinking_with_typing_instead_of_completing_turn():
-    from unittest.mock import patch
-
-    directory = _utility_get_directory()
-    builder = ContextBuilder(system_prompt="sys", action_directory=directory)
-    policy = PolicyController(directory, builder, thinking_action_name="fake")
-
-    root = builder.add_root()
-    listener = builder.add_operand(
-        parent=root,
-        action_requests=[
-            ActionDescription(id="ad-1", action_name="telegram", method_name="listen")
-        ],
-        action_results=[ActionResult(contents="thanks!", metadata={"chat_id": "42"})],
+def test_error_results_reprompt_thinking_instead_of_completing_turn():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(
+        builder, channel="telegram", contents="thanks!", metadata={"chat_id": "42"}
     )
-    # the model proposed a react with a hallucinated emoji; the adapter
-    # returned an error result — all-delivery, but the turn must not end
     failed_react = builder.add_operand(
-        parent=listener,
-        action_requests=[
-            ActionDescription(id="call_1", action_name="telegram", method_name="react",
-                              method_parameters={"chat_id": "42", "message_id": "7", "emoji": "🦖"})
-        ],
-        action_results=[ActionResult(contents="", error="not an allowed reaction")],
+        parents=[stimulus],
+        order=0,
+        action_request=ActionDescription(id="call_1", action_name="telegram", method_name="react",
+                                         method_parameters={"chat_id": "42", "message_id": "7", "emoji": "🦖"}),
+        action_result=ActionResult(contents="", error="not an allowed reaction"),
     )
-    working = builder.add_operand(parent=failed_react)
 
     with patch.object(TelegramAction, "_api", return_value={"ok": True}) as api:
-        evaluated = policy.evaluate(working, builder.build(working))
+        children = policy.decide([failed_react], builder.build([failed_react]))
 
-    assert evaluated.action_requests[0].method_name == "complete"  # re-prompt, not listen
+    assert children[0].action_request is not None
+    assert children[0].action_request.method_name == "complete"  # re-prompt, not input
     api.assert_called_once_with("sendChatAction", {"chat_id": "42", "action": "typing"})
 
 
-def test_effect_results_route_to_thinking():
-    policy, directory = _utility_get_policy()
-    listener = _utility_get_operand(
-        "listener", None,
-        requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        results=[ActionResult(contents="hello")],
+def test_delivery_only_frontier_completes_turn_and_rearms_input():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(
+        builder, channel="telegram", contents="thanks!", metadata={"chat_id": "42"}
     )
-    # a resolved effect request that is neither listen nor send (a future tool)
-    effect = _utility_get_operand(
-        "effect", "listener",
-        requests=[ActionDescription(id="r2", action_name="terminal", method_name="beep")],
-        results=[ActionResult(contents="beeped")],
-    )
-    working = _utility_get_operand("working", "effect")
-
-    evaluated = policy.evaluate(
-        working, _utility_get_context(directory, [listener, effect, working])
+    react = builder.add_operand(
+        parents=[stimulus],
+        order=0,
+        action_request=ActionDescription(id="call_1", action_name="telegram", method_name="react",
+                                         method_parameters={"chat_id": "42", "message_id": "7", "emoji": "👍"}),
+        action_result=ActionResult(contents="👍"),
     )
 
-    assert evaluated.action_requests[0].action_name == "fake"
+    children = policy.decide([react], builder.build([react]))
+
+    request = children[0].action_request
+    assert request is not None
+    assert request.method_name == "input"
+    assert request.action_name == "telegram"
+
+
+def test_effect_frontier_joins_into_one_thinking_child():
+    policy, builder = _utility_get_stack()
+    stimulus = _utility_get_stimulus(builder)
+    # two resolved effect children of a proposing thinking operand — the
+    # next thinking joins them: parents are exactly the results it consumes
+    thinking = builder.add_operand(
+        parents=[stimulus],
+        order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents=""),
+    )
+    effect_a = builder.add_operand(
+        parents=[thinking], order=0,
+        action_request=ActionDescription(id="ca", action_name="terminal", method_name="beep"),
+        action_result=ActionResult(contents="a"),
+    )
+    effect_b = builder.add_operand(
+        parents=[thinking], order=1,
+        action_request=ActionDescription(id="cb", action_name="terminal", method_name="beep"),
+        action_result=ActionResult(contents="b"),
+    )
+
+    children = policy.decide([effect_a, effect_b], builder.build([effect_a, effect_b]))
+
+    assert len(children) == 1
+    join = children[0]
+    assert join.action_request is not None
+    assert join.action_request.method_name == "complete"
+    assert join.parents == [effect_a.id, effect_b.id]

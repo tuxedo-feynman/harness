@@ -61,8 +61,9 @@ def test_arm_initial_parents_listeners_to_root():
 
     listener = builder.pop_listener("terminal")
     assert listener is not None
-    assert listener.parent == root.id
-    assert listener.action_requests[0].method_name == "listen"
+    assert listener.parents == [root.id]
+    assert listener.action_request is not None
+    assert listener.action_request.method_name == "input"
     assert not listener.resolved
 
 

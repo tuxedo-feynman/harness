@@ -9,11 +9,12 @@ from typing import Any
 from hyh.models import ActionKind, ActionResult, Context
 
 # Canonical method names — hyh's verb vocabulary. The name IS the
-# marker; there are no flags. Channel actions expose "listen" (wait for the
-# world; parks as a pending listener operand) and "send" (tell the world).
-# Thinking actions expose "complete". Each action translates the verb into its
-# own underlying call (input(), getUpdates, chat.completions.create, ...).
-LISTEN_METHOD = "listen"
+# marker; there are no flags. Channel actions expose "input" (a request for
+# the channel's next event — message, poll vote, ... — parked unresolved
+# until the world produces one) and "send" (tell the world). Thinking
+# actions expose "complete". Each action translates the verb into its own
+# underlying call (input(), getUpdates, chat.completions.create, ...).
+INPUT_METHOD = "input"
 SEND_METHOD = "send"
 THINKING_METHOD = "complete"
 TYPING_METHOD = "typing"

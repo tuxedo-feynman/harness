@@ -23,24 +23,23 @@ def test_fallback_reads_history_from_a_mocked_context():
     assert result.contents == "Hello! How can I help you?"
 
 
-def _utility_get_listen_operand(contents: str) -> Operand:
+def _utility_get_input_operand(contents: str) -> Operand:
     return Operand(
         id=f"op-{contents or 'blank'}",
         created_at=datetime(2026, 7, 28, tzinfo=timezone.utc),
-        parent=None,
-        action_requests=[
-            ActionDescription(id="r1", action_name="terminal", method_name="listen")
-        ],
-        action_results=[ActionResult(contents=contents)],
+        parents=[],
+        order=0,
+        action_request=ActionDescription(id="r1", action_name="terminal", method_name="input"),
+        action_result=ActionResult(contents=contents),
     )
 
 
 def test_fallback_echoes_the_latest_input_ignoring_blanks():
     context = Mock(spec=Context)
     context.history = [
-        _utility_get_listen_operand("first"),
-        _utility_get_listen_operand("   "),  # blank inputs never count
-        _utility_get_listen_operand("second"),
+        _utility_get_input_operand("first"),
+        _utility_get_input_operand("   "),  # blank inputs never count
+        _utility_get_input_operand("second"),
     ]
     context.available_actions = {}
     result = FakeThinkingAction().run("complete", {}, context)

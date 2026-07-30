@@ -8,15 +8,14 @@ Null Action:
 - Terminating Action: ends the current branch. Policy Controller requests it when a branch is genuinely over (e.g. a channel quit). Turns normally end by returning to listening, not by Null.
 
 Listeners:
-- Every listening channel (terminal, telegram, ...) holds exactly one live pending Operand: an unresolved listen request. It resolves with an ActionResult when a message arrives.
-- When a turn completes, the other channels' pending listeners are MOVED (reparented, same operand -- it is the same subscription) to the new tip as siblings of the fresh listener, so any channel's next message continues from the full conversation. One shared history across all channels.
+- Every listening channel (terminal, telegram, ...) holds exactly one live pending Operand: an unresolved input request -- a request for the channel's next event (message, poll vote, ...). It resolves with an ActionResult when the world produces one.
+- When a turn completes, the other channels' pending input requests are MOVED (reparented, same operand -- it is the same subscription) to the new tip as siblings of the fresh one, so any channel's next event continues from the full conversation. One shared history across all channels.
 
 
 Execution Loop:
-- Anchored on a resolved stimulus operand. Creates a new working operand for each cycle, calls context builder, and passes off to policy engine.
-- Single-threaded: executes every ActionDescription in the operand's action_requests sequentially, appending each ActionResult to action_results. action_results[i] is the result of action_requests[i] -- index pairing is the provenance record.
-- Requests whose method is named listen are PARKED (left unresolved, registered as that channel's pending listener) instead of executed.
-- Holds the logic for the execution loop: Build Context --> Evaluate Policy Controls --> Execute Actions --> [[REPEAT until a listen request parks or a Null Action executes]]
+- Anchored on a resolved stimulus operand. Each cycle: Build Context from the frontier (the resolved operands whose results feed the next decision) --> Policy Controller decides and creates the child operands --> execute them sequentially in sibling order --> the children become the next frontier. [[REPEAT until an input request parks or a Null Action executes]]
+- Single-threaded: children execute in sibling order; each child's result resolves that child.
+- Requests whose method is named input are PARKED (left unresolved, registered as that channel's pending listener) instead of executed.
 
 Dispatcher:
 - The stimulus boundary. One thread per listening channel blocks on the channel and pushes results onto a queue; threads know nothing about operands.
@@ -24,30 +23,31 @@ Dispatcher:
 
 
 Operand:
-- Primary internal data model
+- Primary internal data model: one node of the operand DAG. A single request for an event, resolved when that event arrives (a thinking request by a completion, a send by its delivery, an input request by the channel's next event). One rule, no special casing: an operand's parents are exactly the operands whose results its request consumes -- a chain is the one-parent case; a thinking operand that read three tool results has all three as parents.
 {
     id: uuid
     created_at: datetime
-    parent: uuid | None
-    action_requests: [ActionDescription]
-    action_results: [ActionResult]
+    parents: [uuid]
+    order: int  // position among siblings; deliberately sibling-local (a global sequence would conflate with id and overflow a years-long agent life)
+    action_request: ActionDescription | None  // None only on the synthetic root
+    action_result: ActionResult | None  // None while the request is a pending promise
 }
 
 Context:
 - Internal representation handed to Policy Controller and Thinking Actions
 {
     system_prompt: str
-    history: [Operand]  // the ancestor path from root to the anchor operand, in order
+    history: [Operand]  // the ancestor closure of the frontier, linearized: topological order with sibling-order tie-breaks -- deterministic
     available_actions: dict[str, {kind, methods: dict[str, MethodDescription]}]  // action_name -> kind + method_name -> MethodDescription. kind is included so Thinking Actions can filter what they advertise as callable (e.g. effect-only), while still allowing policy-sanctioned thinking-calls-thinking setups.
-    listeners: [Operand]  // live pending listener operands -- off the ancestor path, so only visible here
+    listeners: [Operand]  // live pending input operands -- off the ancestor closure, so only visible here
 }
 
 Context Builder:
-- Owns the operand tree for the life of the process. The tree (parent pointers) is the sole source of truth; the flat storage list is an implementation detail.
-- An explicit synthetic root operand starts the tree; the initial listeners attach as its children.
-- Invariants: children only attach beneath resolved operands, so unresolved operands are always leaves. Resolved operands are immutable history; unresolved operands are live state -- filled by Policy Controller, moved by Context Builder.
+- Owns the operand DAG for the life of the process. The graph (parent pointers) is the sole source of truth; the flat storage list is an implementation detail.
+- An explicit synthetic root operand starts the graph; the initial input requests attach as its children.
+- Invariants: children only attach beneath resolved operands, so unresolved operands are always leaves. Resolved operands are immutable history; unresolved operands are live state -- moved by Context Builder.
 - move() reparents a pending operand (the prune-and-move of uncle listeners). Only unresolved operands may move.
-- build(anchor) renders the context as seen from an operand: history is the ancestor path root->anchor, so pending listeners and dead branches are excluded automatically. available_actions is a read-only projection of Action.methods per registered Action -- never the ActionDirectory itself, so Actions can't call other Actions directly and bypass Policy Controller.
+- build(frontier) renders the context as seen from the frontier: history is the ancestor closure, linearized in topological order with sibling-order tie-breaks, so pending listeners and dead branches are excluded automatically and rendering is deterministic. available_actions is a read-only projection of Action.methods per registered Action -- never the ActionDirectory itself, so Actions can't call other Actions directly and bypass Policy Controller.
 
 
 hyh Execution Unit: // NOT NEEDED FOR MVP
@@ -59,9 +59,9 @@ hyh Execution Unit: // NOT NEEDED FOR MVP
   }
 
   Policy Controller:
-  - A bunch of conditional logic, inspects the Operand and decides whether to short-circuit a thinking action and go directly to null or effect action.
-  - Primary path will be that action_requests of the operand is empty, and policy controller will update the operand with an ActionDescription.
-  - Owns the end-of-turn listening decision: which channels keep a pending listener (quit = omit that channel's listen request), where responses are delivered (the origin channel of the current branch), and when the uncle listeners move to the tip (mechanics executed by Context Builder).
+  - A bunch of conditional logic, inspects the resolved frontier and decides whether to short-circuit a thinking action and go directly to null or effect action.
+  - Primary path: creates the child operands for the next cycle (parents = the frontier, order = position in the batch), each carrying one ActionDescription.
+  - Owns the end-of-turn listening decision: which channels keep a pending input request (quit = omit that channel's), where responses are delivered (the origin channel of the current branch), and when the uncle listeners move to the tip (mechanics executed by Context Builder).
   - Logs every decision it makes: requests attached, requests vetoed or modified, short-circuits taken.
 
 
@@ -86,7 +86,7 @@ Action:
     parameters_schema: dict[str, Any]
   )
 
-- Canonical method names are hyh's verb vocabulary -- the name IS the marker, there are no flags. Channel actions expose "listen" (wait for the world; parks as a pending listener operand) and "send" (tell the world); thinking actions expose "complete". Each action translates the verb into its underlying call (input(), getUpdates, chat.completions.create, ...). At most one listen method per action holds by construction.
+- Canonical method names are hyh's verb vocabulary -- the name IS the marker, there are no flags. Channel actions expose "input" (a request for the channel's next event -- message, poll vote, ...; parks as a pending operand until the world resolves it) and "send" (tell the world); thinking actions expose "complete". Each action translates the verb into its underlying call (input(), getUpdates, chat.completions.create, ...). At most one input method per action holds by construction.
 )
 
 

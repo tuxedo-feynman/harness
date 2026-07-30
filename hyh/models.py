@@ -35,18 +35,27 @@ class ActionResult:
 
 @dataclass
 class Operand:
-    """One iteration of the execution loop: a batch of requests and their
-    results. action_results[i] is the result of action_requests[i]."""
+    """One node of the operand DAG: a single request for an event, resolved
+    when that event arrives (a thinking request by a completion, a send by
+    its delivery, an input request by the channel's next event). parents are
+    exactly the operands whose results this request consumes; order is this
+    operand's position among its siblings — context rendering is topological
+    order with sibling-order tie-breaks, so it is deliberately sibling-local
+    (a global sequence would conflate with id and overflow a years-long
+    agent life)."""
 
     id: str
     created_at: datetime
-    parent: str | None
-    action_requests: list[ActionDescription] = field(default_factory=list)
-    action_results: list[ActionResult] = field(default_factory=list)
+    parents: list[str]
+    order: int
+    action_request: ActionDescription | None = None
+    action_result: ActionResult | None = None
 
     @property
     def resolved(self) -> bool:
-        return len(self.action_results) == len(self.action_requests)
+        # The root awaits nothing; every other operand is a pending promise
+        # until its event arrives.
+        return self.action_request is None or self.action_result is not None
 
 
 @dataclass

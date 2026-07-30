@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from hyh.action import LISTEN_METHOD, POLL_METHOD, REACT_METHOD, SEND_METHOD, TYPING_METHOD, Action
+from hyh.action import INPUT_METHOD, POLL_METHOD, REACT_METHOD, SEND_METHOD, TYPING_METHOD, Action
 from hyh.config import TelegramActionConfig
 from hyh.models import ActionResult, Context
 
@@ -146,9 +146,12 @@ class TelegramAction(Action):
                 "required": ["chat_id"],
             },
         ),
-        LISTEN_METHOD: Action.MethodDescription(
-            name=LISTEN_METHOD,
-            description="Wait for the next Telegram message from an allowed chat.",
+        INPUT_METHOD: Action.MethodDescription(
+            name=INPUT_METHOD,
+            description=(
+                "The next input event from an allowed Telegram chat: a "
+                "message, a poll vote, ..."
+            ),
         ),
     }
 
@@ -242,7 +245,7 @@ class TelegramAction(Action):
                 },
             )
             return ActionResult(contents=question)
-        if method_name == LISTEN_METHOD:
+        if method_name == INPUT_METHOD:
             while True:
                 try:
                     response = self._api(

@@ -1,6 +1,6 @@
 import sys
 
-from hyh.action import LISTEN_METHOD
+from hyh.action import INPUT_METHOD
 from hyh.action_directory import ActionDirectory
 from hyh.cli import parse_args
 from hyh.config import build_actions, load_config
@@ -34,14 +34,16 @@ def main(argv=None) -> None:
         Dispatcher(directory, context_builder, loop).serve(root)
     elif args.prompt:
         # Single-shot: no listener threads. Seed the prompt as an
-        # already-resolved terminal listen stimulus and run one turn. The
-        # listener Policy parks at turn end never resolves — the process exits.
+        # already-resolved terminal input stimulus and run one turn. The
+        # input request Policy parks at turn end never resolves — the
+        # process exits.
         stimulus = context_builder.add_operand(
-            parent=root,
-            action_requests=[
-                ActionDescription(id=new_id(), action_name="terminal", method_name=LISTEN_METHOD)
-            ],
-            action_results=[ActionResult(contents=args.prompt)],
+            parents=[root],
+            order=0,
+            action_request=ActionDescription(
+                id=new_id(), action_name="terminal", method_name=INPUT_METHOD
+            ),
+            action_result=ActionResult(contents=args.prompt),
         )
         loop.run(stimulus)
     else:

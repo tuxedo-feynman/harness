@@ -17,15 +17,14 @@ def test_converts_user_input_history_to_openai_messages():
     builder = ContextBuilder(system_prompt="sys", action_directory=directory)
     root = builder.add_root()
     listener = builder.add_operand(
-        parent=root,
-        action_requests=[
-            ActionDescription(id="ad-1", action_name="terminal", method_name="listen")
-        ],
-        action_results=[ActionResult(contents="hello")],
+        parents=[root],
+        order=0,
+        action_request=ActionDescription(id="ad-1", action_name="terminal", method_name="input"),
+        action_result=ActionResult(contents="hello"),
     )
 
     action = OpenAIThinkingAction(ThinkingActionConfig())
-    messages = action._to_openai_messages(builder.build(listener))
+    messages = action._to_openai_messages(builder.build([listener]))
 
     assert messages == [
         {"role": "system", "content": "sys"},
@@ -98,7 +97,7 @@ def test_build_tools_advertises_effect_methods_only():
     builder = ContextBuilder(system_prompt="sys", action_directory=directory)
     action = OpenAIThinkingAction(ThinkingActionConfig())
 
-    tools, lookup = action._build_tools(builder.build(builder.add_root()))
+    tools, lookup = action._build_tools(builder.build([builder.add_root()]))
 
     names = {tool["function"]["name"] for tool in tools}
     # fake and null excluded; listen and typing are the harness's verbs,
@@ -112,51 +111,45 @@ def test_to_openai_messages_reconstructs_a_full_turn():
     builder = ContextBuilder(system_prompt="sys", action_directory=directory)
     root = builder.add_root()
     listener = builder.add_operand(
-        parent=root,
-        action_requests=[ActionDescription(id="r1", action_name="terminal", method_name="listen")],
-        action_results=[ActionResult(contents="question")],
+        parents=[root], order=0,
+        action_request=ActionDescription(id="r1", action_name="terminal", method_name="input"),
+        action_result=ActionResult(contents="question"),
     )
     proposal = ActionDescription(
         id="call_9", action_name="terminal", method_name="send", method_parameters={"text": "hi"}
     )
     thinking = builder.add_operand(
-        parent=listener,
-        action_requests=[ActionDescription(id="r2", action_name="fake", method_name="complete")],
-        action_results=[
-            ActionResult(contents="thinking aloud", action_description_requests=[proposal])
-        ],
+        parents=[listener], order=0,
+        action_request=ActionDescription(id="r2", action_name="fake", method_name="complete"),
+        action_result=ActionResult(contents="thinking aloud", action_description_requests=[proposal]),
     )
     effect = builder.add_operand(
-        parent=thinking,
-        action_requests=[proposal],  # same ActionDescription: id pairs the tool result
-        action_results=[ActionResult(contents="hi")],
+        parents=[thinking], order=0,
+        action_request=proposal,  # same ActionDescription: id pairs the tool result
+        action_result=ActionResult(contents="hi"),
     )
     # a delivery relaying the thinking result's own text is already emitted — skipped
     relay = builder.add_operand(
-        parent=effect,
-        action_requests=[
-            ActionDescription(id="relay", action_name="terminal", method_name="send",
-                              method_parameters={"text": "thinking aloud"})
-        ],
-        action_results=[ActionResult(contents="thinking aloud")],
+        parents=[effect], order=0,
+        action_request=ActionDescription(id="relay", action_name="terminal", method_name="send",
+                                         method_parameters={"text": "thinking aloud"}),
+        action_result=ActionResult(contents="thinking aloud"),
     )
     # a policy-AUTHORED send (e.g. a canned reply) is a new assistant utterance
     synthesized = builder.add_operand(
-        parent=relay,
-        action_requests=[
-            ActionDescription(id="synth", action_name="terminal", method_name="send",
-                              method_parameters={"text": "bye"})
-        ],
-        action_results=[ActionResult(contents="bye")],
+        parents=[relay], order=0,
+        action_request=ActionDescription(id="synth", action_name="terminal", method_name="send",
+                                         method_parameters={"text": "bye"}),
+        action_result=ActionResult(contents="bye"),
     )
     null = builder.add_operand(
-        parent=synthesized,
-        action_requests=[ActionDescription(id="r5", action_name="null", method_name="terminate")],
-        action_results=[ActionResult(contents="")],
+        parents=[synthesized], order=0,
+        action_request=ActionDescription(id="r5", action_name="null", method_name="terminate"),
+        action_result=ActionResult(contents=""),
     )
 
     messages = OpenAIThinkingAction(ThinkingActionConfig())._to_openai_messages(
-        builder.build(null)
+        builder.build([null])
     )
 
     assert messages == [
