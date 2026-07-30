@@ -1,13 +1,11 @@
-import logging
 import time
 
 from hyh.action import INPUT_METHOD
 from hyh.action_directory import ActionDirectory
 from hyh.context import ContextBuilder
+from hyh.logger import record
 from hyh.models import Operand
 from hyh.policy import PolicyController
-
-log = logging.getLogger(__name__)
 
 
 class ExecutionLoop:
@@ -44,9 +42,7 @@ class ExecutionLoop:
 
                 if request.method_name == INPUT_METHOD and INPUT_METHOD in action.methods:
                     self.context_builder.park_listener(request.action_name, child)
-                    log.info(
-                        f"listener_parked operand={child.id} channel={request.action_name}"
-                    )
+                    record(child, f"parked channel={request.action_name}")
                     return
 
                 start = time.monotonic()
@@ -54,11 +50,12 @@ class ExecutionLoop:
                 child.action_result = result
 
                 duration = time.monotonic() - start
-                log.info(
-                    f"action_executed operand={child.id} request={request.id}"
+                record(
+                    child,
+                    f"executed request={request.id}"
                     f" action={request.action_name} method={request.method_name}"
                     f" proposals={len(result.action_description_requests)}"
-                    f" duration={duration:.3f}s"
+                    f" duration={duration:.3f}s",
                 )
                 if action.kind == "null":
                     return

@@ -31,6 +31,7 @@ Operand:
     order: int  // position among siblings; deliberately sibling-local (a global sequence would conflate with id and overflow a years-long agent life)
     action_request: ActionDescription | None  // None only on the synthetic root
     action_result: ActionResult | None  // None while the request is a pending promise
+    logs: [LogEntry]  // append-only lifetime log {at, message}: created, policy decisions, moves, execution. Written only by harness components via logger.record(), which echoes each entry to the process log -- the operand log is the operand-scoped subset of the process log. Never rendered to the model.
 }
 
 Context:

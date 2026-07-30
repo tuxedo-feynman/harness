@@ -34,6 +34,16 @@ class ActionResult:
 
 
 @dataclass
+class LogEntry:
+    """One timestamped event in an operand's lifetime (logfmt-style message).
+    Appended via logger.record(), which also echoes it to the process log —
+    the operand log is a subset of the process log, scoped to this operand."""
+
+    at: datetime
+    message: str
+
+
+@dataclass
 class Operand:
     """One node of the operand DAG: a single request for an event, resolved
     when that event arrives (a thinking request by a completion, a send by
@@ -50,6 +60,9 @@ class Operand:
     order: int
     action_request: ActionDescription | None = None
     action_result: ActionResult | None = None
+    # Append-only lifetime log: created, policy decisions, moves, execution.
+    # Operational provenance — never rendered to the model.
+    logs: list[LogEntry] = field(default_factory=list)
 
     @property
     def resolved(self) -> bool:

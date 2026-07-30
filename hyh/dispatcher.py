@@ -5,7 +5,7 @@ import threading
 from hyh.action import INPUT_METHOD, Action
 from hyh.action_directory import ActionDirectory
 from hyh.context import ContextBuilder
-from hyh.logger import new_id
+from hyh.logger import new_id, record
 from hyh.loop import ExecutionLoop
 from hyh.models import ActionDescription, ActionResult, Context, Operand
 
@@ -82,7 +82,7 @@ class Dispatcher:
             log.warning(f"stimulus_dropped channel={channel} reason=no_pending_listener")
             return
         operand.action_result = result
-        log.info(f"listener_resolved operand={operand.id} channel={channel}")
+        record(operand, f"resolved channel={channel}")
         self.loop.run(operand)
 
     def _listen(self, action: Action) -> None:

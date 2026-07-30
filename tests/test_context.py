@@ -85,6 +85,28 @@ def test_add_root_is_singular():
         builder.add_root()
 
 
+def test_operand_logs_narrate_the_lifetime_including_moves():
+    builder = _utility_get_builder()
+    root = builder.add_root()
+    first_tip = builder.add_operand(
+        parents=[root], order=0, action_request=_utility_get_request(), action_result=ActionResult(contents="x")
+    )
+    second_tip = builder.add_operand(
+        parents=[first_tip], order=0, action_request=_utility_get_request("ad-2"), action_result=ActionResult(contents="y")
+    )
+    listener = builder.add_operand(parents=[root], order=1, action_request=_utility_get_request("ad-3"))
+
+    builder.move(listener, [first_tip])
+    builder.move(listener, [second_tip])
+
+    messages = [entry.message for entry in listener.logs]
+    assert messages[0] == f"created parents={root.id} order=1"
+    # the mutation overwrites parents; the log preserves every hop
+    assert messages[1] == f"moved from={root.id} to={first_tip.id}"
+    assert messages[2] == f"moved from={first_tip.id} to={second_tip.id}"
+    assert listener.parents == [second_tip.id]
+
+
 def test_listener_registry():
     builder = _utility_get_builder()
     root = builder.add_root()

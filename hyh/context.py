@@ -1,11 +1,8 @@
-import logging
 from datetime import datetime, timezone
 
 from hyh.action_directory import ActionDirectory
-from hyh.logger import new_id
+from hyh.logger import new_id, record
 from hyh.models import ActionDescription, ActionResult, Context, Operand
-
-log = logging.getLogger(__name__)
 
 
 class ContextBuilder:
@@ -57,16 +54,17 @@ class ContextBuilder:
         )
         self._operands.append(operand)
         self._by_id[operand.id] = operand
-        log.info(f"operand_created id={operand.id} parents={','.join(parents) or None} order={order}")
+        record(operand, f"created parents={','.join(parents) or None} order={order}")
         return operand
 
     def move(self, operand: Operand, new_parents: list[Operand]) -> None:
         """Reparent a pending operand. Only unresolved operands (live state,
         e.g. armed input requests) are ever moved; resolved operands are
-        history."""
-        log.info(
-            f"operand_moved id={operand.id} from={','.join(operand.parents)}"
-            f" to={','.join(p.id for p in new_parents)}"
+        history. The lifetime log preserves the old parents the mutation
+        overwrites."""
+        record(
+            operand,
+            f"moved from={','.join(operand.parents)} to={','.join(p.id for p in new_parents)}",
         )
         operand.parents = [p.id for p in new_parents]
 

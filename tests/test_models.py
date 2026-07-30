@@ -38,3 +38,4 @@ def test_model_defaults():
     assert operand.action_request is None
     assert operand.action_result is None
     assert operand.parents == []
+    assert operand.logs == []

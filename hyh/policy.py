@@ -1,12 +1,9 @@
-import logging
 
 from hyh.action import DELIVERY_METHODS, INPUT_METHOD, SEND_METHOD, THINKING_METHOD, TYPING_METHOD
 from hyh.action_directory import ActionDirectory
 from hyh.context import ContextBuilder
-from hyh.logger import new_id
+from hyh.logger import new_id, record
 from hyh.models import ActionDescription, ActionResult, Context, Operand
-
-log = logging.getLogger(__name__)
 
 QUIT_WORDS = {"quit", "exit", "q"}
 EMPTY_INPUT_REPLY = "I didn't get that."
@@ -44,7 +41,8 @@ class PolicyController:
                 self.context_builder.add_operand(parents=frontier, order=i, action_request=ad)
                 for i, ad in enumerate(proposals)
             ]
-            log.info(f"policy decision=attach_proposals count={len(proposals)}")
+            for child in children:
+                record(child, f"policy decision=attach_proposals count={len(proposals)}")
             return children
 
         stimulus = self._resolved_input(frontier)
@@ -131,7 +129,7 @@ class PolicyController:
         so their next stimulus continues from the full conversation."""
         for uncle in context.listeners:
             self.context_builder.move(uncle, new_parents)
-            log.info(f"policy decision=keep_listening operand={uncle.id}")
+            record(uncle, "policy decision=keep_listening")
 
     def _thinking(self, frontier: list[Operand], context: Context, reason: str) -> Operand:
         child = self.context_builder.add_operand(
@@ -143,7 +141,7 @@ class PolicyController:
                 method_name=THINKING_METHOD,
             ),
         )
-        log.info(f"policy operand={child.id} decision=attach_thinking reason={reason}")
+        record(child, f"policy decision=attach_thinking reason={reason}")
         self._indicate_typing(frontier, context)
         return child
 
@@ -168,10 +166,10 @@ class PolicyController:
             method_parameters=parameters,
         )
         result = action.run(TYPING_METHOD, parameters, context)
-        self.context_builder.add_operand(
+        sibling = self.context_builder.add_operand(
             parents=frontier, order=1, action_request=request, action_result=result
         )
-        log.info(f"policy decision=typing_indicator channel={channel}")
+        record(sibling, f"policy decision=typing_indicator channel={channel}")
 
     def _null(self, frontier: list[Operand], reason: str) -> Operand:
         child = self.context_builder.add_operand(
@@ -181,7 +179,7 @@ class PolicyController:
                 id=new_id(), action_name="null", method_name="terminate"
             ),
         )
-        log.info(f"policy operand={child.id} decision=attach_null reason={reason}")
+        record(child, f"policy decision=attach_null reason={reason}")
         return child
 
     def _input(self, frontier: list[Operand], channel: str, reason: str) -> Operand:
@@ -192,7 +190,7 @@ class PolicyController:
                 id=new_id(), action_name=channel, method_name=INPUT_METHOD
             ),
         )
-        log.info(f"policy operand={child.id} decision=attach_input channel={channel} reason={reason}")
+        record(child, f"policy decision=attach_input channel={channel} reason={reason}")
         return child
 
     def _delivery(
@@ -217,5 +215,5 @@ class PolicyController:
                 method_parameters=parameters,
             ),
         )
-        log.info(f"policy operand={child.id} decision=deliver_response channel={channel}")
+        record(child, f"policy decision=deliver_response channel={channel}")
         return child
